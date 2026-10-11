@@ -8,3 +8,5 @@ data class HarmonicConstituent(val name: String, val amplitude: Double, val phas
 }
 data class TidePoint(val time: Instant, val heightMetres: Double)
 data class TideRatePoint(val time: Instant, val rateMetresPerHour: Double)
+enum class ExtremeKind { HIGH, LOW }
+data class TideExtreme(val time: Instant, val heightMetres: Double, val kind: ExtremeKind)

@@ -21,4 +21,15 @@ class Station(constituents: List<HarmonicConstituent>, val offsetMetres: Double 
         val p = ParamProvider(constituents, offsetMetres, timeline.start, timeline.endHour)
         return timeline.items.zip(timeline.hours).map { (time, hour) -> TideRatePoint(time, evalHPrime(hour, p.params(hour))) }
     }
+    fun extremes(from: Instant, to: Instant): List<TideExtreme> = extremes(from, to, 0.01)
+    internal fun extremes(from: Instant, to: Instant, prominenceThreshold: Double): List<TideExtreme> {
+        if (to < from) return emptyList()
+        val start = instant(kotlin.math.floor(epochSeconds(from) / 600) * 600)
+        val end = kotlin.math.ceil(epochSeconds(to) / 600) * 600
+        val endHour = (end - epochSeconds(start)) / 3600
+        val p = ParamProvider(constituents, offsetMetres, start, endHour)
+        return findExtremes(0.0, endHour, p, prominenceThreshold).map {
+            TideExtreme(it.time, it.level, if (it.high) ExtremeKind.HIGH else ExtremeKind.LOW)
+        }
+    }
 }
