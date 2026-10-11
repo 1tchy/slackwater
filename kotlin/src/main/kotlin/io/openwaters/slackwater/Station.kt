@@ -5,6 +5,8 @@ import java.time.Instant
 /** Offline harmonic tide station; the additive offset is in meters in the caller's datum. */
 class Station(constituents: List<HarmonicConstituent>, val offsetMetres: Double = 0.0) {
     internal val constituents = constituents.toList()
+    internal val eventBracketHours = kotlin.math.PI / (2 * D2R *
+        (this.constituents.filter { it.amplitude != 0.0 }.maxOfOrNull { Catalog.speed(it.name) ?: 0.0 } ?: 0.0))
     init { require(offsetMetres.isFinite()) { "Offset must be finite" } }
 
     /** Includes the start floored and end ceiled to stepSeconds. */

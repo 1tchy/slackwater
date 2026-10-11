@@ -19,12 +19,22 @@ internal fun makeTimeline(from: Instant, to: Instant, stepSeconds: Double): Time
     if (to < from) return Timeline(emptyList(), emptyList(), from, 0.0)
     val first = epochSeconds(from)
     val last = epochSeconds(to)
-    require(first + stepSeconds > first && last + stepSeconds > last) { "Step cannot advance this epoch time" }
-    val start = floor(first / stepSeconds) * stepSeconds
-    val end = ceil(last / stepSeconds) * stepSeconds
+    var start = floor(first / stepSeconds) * stepSeconds
+    var end = ceil(last / stepSeconds) * stepSeconds
+    require(stepSeconds >= max(Math.ulp(start), Math.ulp(end))) { "Step cannot advance every timestamp at this epoch" }
+    // Double epoch rounding can otherwise move a snapped boundary inside the original Instant.
+    if (instant(start) > from) start -= stepSeconds
+    if (instant(end) < to) end += stepSeconds
     val count = round((end - start) / stepSeconds) + 1
     require(count.isFinite() && count >= 1 && count <= Int.MAX_VALUE) { "Timeline exceeds indexed range" }
-    val items = List(count.toInt()) { instant(start + it * stepSeconds) }
+    var previous: Instant? = null
+    val items = List(count.toInt()) {
+        val time = instant(start + it * stepSeconds)
+        require(previous == null || time > previous) { "Timeline timestamps do not advance" }
+        previous = time
+        time
+    }
+    require(items.first() <= from && items.last() >= to) { "Timeline cannot represent outward boundaries" }
     val hours = List(items.size) { it * stepSeconds / 3600 }
     return Timeline(items, hours, instant(start), (end - start) / 3600)
 }

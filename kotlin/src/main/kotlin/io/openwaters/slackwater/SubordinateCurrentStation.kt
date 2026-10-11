@@ -2,6 +2,7 @@ package io.openwaters.slackwater
 
 import java.time.Instant
 import kotlin.math.abs
+import kotlin.math.min
 
 /** NOAA event-table reduction; the sampled curve is a drawing between events. */
 class SubordinateCurrentStation(
@@ -39,7 +40,22 @@ class SubordinateCurrentStation(
 
     fun events(from: Instant, to: Instant): List<CurrentEvent> {
         if (to < from) return emptyList()
-        return reduce(reference.events(shifted(from, -pad), shifted(to, pad))).filter { it.time >= from && it.time <= to }
+        var lookAhead = pad
+        val limit = pad + reference.phaseSearchLimitSeconds
+        while (true) {
+            val events = reference.events(shifted(from, -pad), shifted(to, lookAhead))
+            val lastMaximum = events.indexOfLast { it.kind != CurrentEventKind.SLACK }
+            val needsPhase = slackBeforeFloodOffsetSeconds != slackBeforeEbbOffsetSeconds &&
+                events.drop(lastMaximum + 1).any { e ->
+                    listOf(slackBeforeFloodOffsetSeconds, slackBeforeEbbOffsetSeconds).any { offset ->
+                        val time = shifted(e.time, offset)
+                        time >= from && time <= to
+                    }
+                }
+            if (!needsPhase) return reduce(events).filter { it.time >= from && it.time <= to }
+            require(lookAhead < limit) { "Cannot resolve a following current phase within the constituent period" }
+            lookAhead = min(lookAhead * 2, limit)
+        }
     }
     fun speeds(from: Instant, to: Instant, stepSeconds: Double = 600.0): List<CurrentPoint> {
         val timeline = makeTimeline(from, to, stepSeconds)

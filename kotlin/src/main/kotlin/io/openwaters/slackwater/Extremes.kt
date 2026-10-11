@@ -4,6 +4,9 @@ import java.time.Instant
 import kotlin.math.*
 
 internal data class RawExtreme(val hour: Double, val time: Instant, val level: Double, val high: Boolean)
+internal fun checkEventCapacity(hours: Double, bracket: Double) {
+    require(hours.isFinite() && hours / bracket + 2 <= Int.MAX_VALUE) { "Event search exceeds indexed range" }
+}
 internal fun bisectZero(a0: Double, b0: Double, fa0: Double, params: List<PreparedParam>, evaluate: (Double, List<PreparedParam>) -> Double): Double {
     var a = a0
     var b = b0
@@ -47,6 +50,7 @@ internal fun findExtremes(fromHour: Double, toHour: Double, provider: ParamProvi
     val bracket = PI / (2 * maxSpeed)
     // shortcut: fixed context can miss a longer sub-threshold run; extend it if fixtures expose one.
     val context = ceil(25 / bracket) * bracket
+    checkEventCapacity(toHour - fromHour + 2 * context, bracket)
     val searchTo = toHour + context
     val found = mutableListOf<RawExtreme>()
     var previous = fromHour - context

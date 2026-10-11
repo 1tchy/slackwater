@@ -18,6 +18,9 @@ class CurrentStation(
     private val harmonic = Station(constituents, offsetKnots)
     val floodDirectionDegrees = direction(floodDirectionDegrees)
     val ebbDirectionDegrees = direction(ebbDirectionDegrees)
+    internal val phaseSearchLimitSeconds = harmonic.constituents.filter { it.amplitude != 0.0 }
+        .mapNotNull { Catalog.speed(it.name)?.takeIf { speed -> speed > 0.0 } }
+        .minOrNull()?.let { 360.0 / it * 3600 } ?: 0.0
 
     fun speeds(from: Instant, to: Instant, stepSeconds: Double = 600.0): List<CurrentPoint> =
         harmonic.heights(from, to, stepSeconds).map { CurrentPoint(it.time, it.heightMetres) }
@@ -30,6 +33,9 @@ class CurrentStation(
         val first = floor(epochSeconds(from) / 86400).toLong()
         val last = floor(epochSeconds(to) / 86400).toLong()
         require(last - first < Int.MAX_VALUE) { "Event window exceeds indexed range" }
+        val bracket = harmonic.eventBracketHours
+        if (!bracket.isFinite()) return emptyList()
+        checkEventCapacity((last - first + 1) * (80 + 2 * ceil(25 / bracket) * bracket), bracket)
         val results = mutableListOf<CurrentEvent>()
         for (day in first..last) {
             val begin = instant(day * 86400.0)
@@ -58,6 +64,7 @@ internal fun findSlacks(toHour: Double, provider: ParamProvider): List<CurrentEv
     val maxSpeed = params.maxOfOrNull { it.speedRadiansPerHour } ?: return emptyList()
     if (maxSpeed <= 0) return emptyList()
     val bracket = PI / (2 * maxSpeed)
+    checkEventCapacity(toHour, bracket)
     val results = mutableListOf<CurrentEvent>()
     var previous = 0.0
     var vPrevious = evalH(previous, params)

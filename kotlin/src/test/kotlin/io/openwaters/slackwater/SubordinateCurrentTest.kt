@@ -5,6 +5,19 @@ import kotlin.math.abs
 import kotlin.test.*
 
 class SubordinateCurrentTest {
+    @Test fun shortSlackQueriesRetainSlowFollowingPhase() {
+        val t = Instant.parse("2026-01-01T00:00:00Z")
+        val references = listOf(
+            CurrentStation(listOf(HarmonicConstituent("K1", 2.0, 0.0)), offsetKnots = -1.9),
+            CurrentStation(listOf(HarmonicConstituent("Mf", 2.0, 0.0), HarmonicConstituent("Mm", 1.0, 0.0)))
+        )
+        for (ref in references) {
+            val s = SubordinateCurrentStation(ref, 600.0, -600.0, 0.0, 0.0, 1.0, 1.0)
+            val all = s.events(t, t.plusSeconds(40 * 86400)).filter { it.kind == CurrentEventKind.SLACK }
+            assertTrue(all.isNotEmpty())
+            for (e in all) assertEquals(listOf(e), s.events(e.time.minusSeconds(10), e.time.plusSeconds(10)))
+        }
+    }
     private fun simple(flood: Double = 600.0, ebb: Double = -600.0) = SubordinateCurrentStation(
         CurrentStation(listOf(HarmonicConstituent("S2", 2.0, 0.0))), flood, ebb, 300.0, -300.0, 1.5, 0.5
     )
