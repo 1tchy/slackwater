@@ -5,6 +5,15 @@ import kotlin.math.abs
 import kotlin.test.*
 
 class SubordinateTideTest {
+    @Test fun defaultRateStepIsTenMinutes() {
+        val t = java.time.Instant.parse("2026-01-01T00:00:00Z")
+        val s = SubordinateTideStation(Station(listOf(HarmonicConstituent("S2", 1.0, 0.0))), 0.0, 0.0, HeightOffset.Ratio(1.0, 1.0))
+        val rates = s.rates(t, t.plusSeconds(600))
+        assertEquals(2, rates.size)
+        assertTrue(rates.all { it.rateMetresPerHour.isFinite() })
+        assertEquals(600.0, secondsBetween(rates[0].time, rates[1].time))
+    }
+
     @Test fun ratioAndFixedSubordinatesMatchNoaa() {
         val f = fixture("realworld-subordinates")
         assertEquals(2, f.array("cases").size)

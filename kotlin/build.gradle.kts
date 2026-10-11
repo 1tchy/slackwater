@@ -29,4 +29,14 @@ jacoco { toolVersion = "0.8.13" }
 tasks.jacocoTestReport {
     dependsOn(tasks.test)
     reports { xml.required = true; html.required = true }
+    classDirectories.setFrom(sourceSets.main.get().output.asFileTree.matching {
+        exclude("io/openwaters/slackwater/CatalogDataKt.class")
+    })
+}
+tasks.jacocoTestCoverageVerification {
+    dependsOn(tasks.test)
+    classDirectories.setFrom(tasks.jacocoTestReport.get().classDirectories)
+    violationRules {
+        rule { limit { counter = "LINE"; minimum = "1.0".toBigDecimal() } }
+    }
 }
