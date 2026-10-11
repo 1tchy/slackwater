@@ -19,6 +19,13 @@ internal fun JsonObject.constituents(key: String = "constituents") = array(key).
     HarmonicConstituent(c.string("name"), c.number("amplitude"), c.number("phase"))
 }
 internal fun secondsBetween(a: Instant, b: Instant) = java.time.Duration.between(a, b).toNanos() / 1e9
+internal fun JsonObject.current() = CurrentStation(constituents(), number("floodDirection"), number("ebbDirection"), number("offset"))
+internal fun currentKind(value: String) = when (value) {
+    "slack" -> CurrentEventKind.SLACK
+    "maxFlood" -> CurrentEventKind.MAX_FLOOD
+    "maxEbb" -> CurrentEventKind.MAX_EBB
+    else -> error("Invalid fixture kind: $value")
+}
 internal fun angularDiff(a: Double, b: Double): Double {
     val d = abs(a - b) % 360
     return min(d, 360 - d)
