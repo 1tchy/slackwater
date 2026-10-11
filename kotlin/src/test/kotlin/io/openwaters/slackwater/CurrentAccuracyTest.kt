@@ -26,6 +26,26 @@ internal fun oracleSpan(station: JsonObject): Pair<java.time.Instant, java.time.
     return times.min().minusSeconds(3600) to times.max().plusSeconds(3600)
 }
 class CurrentAccuracyTest {
+    @Test fun subordinateNoaaAccuracy() {
+        val c = fixture("currents-golden-subordinate")
+        val ref = CurrentStation(c.constituents("refConstituents"), c.number("refFloodDirection"), c.number("refEbbDirection"), c.number("refOffset"))
+        val (from, to) = oracleSpan(c)
+        checkCurrentAccuracy(c, c.subordinate(ref).events(from, to), 30.0, 0.40)
+    }
+    @Test fun subordinateBatchNoaaAccuracy() {
+        val records = fixture("currents-sample").array("stations").map { it.obj() }.associateBy { it.string("id") }
+        val cases = fixture("currents-golden-sub-batch").array("stations")
+        assertEquals(9, cases.size)
+        for (item in cases) {
+            val golden = item.obj()
+            val c = records.getValue(golden.string("id"))
+            assertEquals("subordinate", c.string("type"))
+            val ref = records.getValue(c.string("reference"))
+            assertEquals("harmonic", ref.string("type"))
+            val (from, to) = oracleSpan(golden)
+            checkCurrentAccuracy(golden, c.subordinate(ref.current()).events(from, to), 30.0, 0.40)
+        }
+    }
     @Test fun harmonicCurrentNoaaAccuracy() {
         val h = fixture("currents-golden-harmonic")
         val (from, to) = oracleSpan(h)

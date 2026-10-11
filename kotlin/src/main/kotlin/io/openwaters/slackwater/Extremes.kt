@@ -17,6 +17,27 @@ internal fun bisectZero(a0: Double, b0: Double, fa0: Double, params: List<Prepar
     }
 }
 
+// Illinois interpolation matches packages/engine/src/harmonics/extremes.ts curve knots.
+private fun derivativeRoot(a0: Double, b0: Double, fa0: Double, fb0: Double, params: List<PreparedParam>): Double {
+    var a = a0; var b = b0; var fa = fa0; var fb = fb0
+    var kept = 0
+    while (true) {
+        val t = (a * fb - b * fa) / (fb - fa)
+        if (b - a < 1.0 / 3600) return t
+        val ft = evalHPrime(t, params)
+        if (ft == 0.0) return t
+        if ((fa > 0) == (ft > 0)) {
+            a = t; fa = ft
+            if (kept == -1) fb /= 2
+            kept = -1
+        } else {
+            b = t; fb = ft
+            if (kept == 1) fa /= 2
+            kept = 1
+        }
+    }
+}
+
 // Bracket/context/filter behavior: swift/Sources/SlackwaterKit/Extremes.swift.
 internal fun findExtremes(fromHour: Double, toHour: Double, provider: ParamProvider, prominenceThreshold: Double): List<RawExtreme> {
     var params = provider.params(max(0.0, fromHour))
@@ -40,7 +61,7 @@ internal fun findExtremes(fromHour: Double, toHour: Double, provider: ParamProvi
         val bound = min(next, searchTo)
         val derivative = evalHPrime(bound, params)
         if (dPrevious != 0.0 && derivative != 0.0 && (dPrevious > 0) != (derivative > 0)) {
-            val root = bisectZero(previous, bound, dPrevious, params, ::evalHPrime)
+            val root = derivativeRoot(previous, bound, dPrevious, derivative, params)
             found += RawExtreme(root, shifted(provider.start, root * 3600), evalH(root, params), evalHDoublePrime(root, params) < 0)
         }
         if (bound >= searchTo) break

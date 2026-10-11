@@ -26,6 +26,11 @@ internal fun currentKind(value: String) = when (value) {
     "maxEbb" -> CurrentEventKind.MAX_EBB
     else -> error("Invalid fixture kind: $value")
 }
+internal fun JsonObject.subordinate(reference: CurrentStation) = SubordinateCurrentStation(
+    reference, number("slackBeforeFloodOffset"), number("slackBeforeEbbOffset"),
+    number("floodTimeOffset"), number("ebbTimeOffset"), number("floodSpeedRatio"), number("ebbSpeedRatio"),
+    get("floodDirection")?.jsonPrimitive?.doubleOrNull, get("ebbDirection")?.jsonPrimitive?.doubleOrNull
+)
 internal fun angularDiff(a: Double, b: Double): Double {
     val d = abs(a - b) % 360
     return min(d, 360 - d)
