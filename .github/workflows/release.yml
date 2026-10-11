@@ -36,7 +36,7 @@ jobs:
 
       - name: Create Release Pull Request or Publish to npm
         id: changesets
-        uses: changesets/action@v1.9.0
+        uses: changesets/action@v2.1.2
         with:
           # changeset version bumps workspace versions without touching
           # package-lock.json; the version script refreshes it so the release
