@@ -18,9 +18,7 @@ class CurrentStation(
     private val harmonic = Station(constituents, offsetKnots)
     val floodDirectionDegrees = direction(floodDirectionDegrees)
     val ebbDirectionDegrees = direction(ebbDirectionDegrees)
-    internal val phaseSearchLimitSeconds = harmonic.constituents.filter { it.amplitude != 0.0 }
-        .mapNotNull { Catalog.speed(it.name)?.takeIf { speed -> speed > 0.0 } }
-        .minOrNull()?.let { 360.0 / it * 3600 } ?: 0.0
+    internal val phaseSearchLimitSeconds = harmonic.phaseSearchLimitSeconds
 
     fun speeds(from: Instant, to: Instant, stepSeconds: Double = 600.0): List<CurrentPoint> =
         harmonic.heights(from, to, stepSeconds).map { CurrentPoint(it.time, it.heightMetres) }

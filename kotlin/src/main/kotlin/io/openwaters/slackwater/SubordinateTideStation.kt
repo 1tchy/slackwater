@@ -41,10 +41,11 @@ class SubordinateTideStation(
     private fun curve(from: Instant, to: Instant, step: Double): List<CurvePoint> {
         val timeline = makeTimeline(from, to, step)
         if (timeline.items.isEmpty()) return emptyList()
-        val first = shifted(timeline.items.first(), -15 * 3600.0)
-        val last = shifted(timeline.items.last(), 15 * 3600.0)
-        var events = extremes(first, last)
-        if (events.size < 2) events = extremes(first, last, 0.0)
-        return halfCosineCurve(events.map { it.time to it.heightMetres }, timeline.items)
+        val knots = curveKnots(timeline.items.first(), timeline.items.last(), 15 * 3600.0, reference.phaseSearchLimitSeconds) { from, to ->
+            var events = extremes(from, to)
+            if (events.size < 2) events = extremes(from, to, 0.0)
+            events.map { it.time to it.heightMetres }
+        }
+        return halfCosineCurve(knots, timeline.items)
     }
 }

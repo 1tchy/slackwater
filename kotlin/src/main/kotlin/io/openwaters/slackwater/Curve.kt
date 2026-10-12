@@ -4,6 +4,19 @@ import java.time.Instant
 import kotlin.math.*
 
 internal data class CurvePoint(val time: Instant, val value: Double, val ratePerHour: Double)
+// Long-period constituents need neighboring knots beyond a fixed day-sized margin.
+internal fun curveKnots(first: Instant, last: Instant, initialPadSeconds: Double, periodSeconds: Double,
+    query: (Instant, Instant) -> List<Pair<Instant, Double>>): List<Pair<Instant, Double>> {
+    var pad = initialPadSeconds
+    val limit = initialPadSeconds + periodSeconds
+    while (true) {
+        val knots = query(shifted(first, -pad), shifted(last, pad))
+        if (periodSeconds == 0.0 || (knots.isNotEmpty() && knots.first().first <= first && knots.last().first >= last)) return knots
+        require(pad < limit) { "Cannot bracket subordinate curve within the constituent period" }
+        pad = min(pad * 2, limit)
+    }
+}
+
 // Half-cosine table drawing: swift/Sources/SlackwaterKit/Subordinate.swift.
 internal fun halfCosineCurve(knots: List<Pair<Instant, Double>>, items: List<Instant>): List<CurvePoint> {
     val unique = knots.sortedBy { it.first }.toMap().toList()

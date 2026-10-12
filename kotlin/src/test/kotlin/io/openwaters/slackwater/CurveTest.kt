@@ -4,6 +4,13 @@ import java.time.Instant
 import kotlin.test.*
 
 class CurveTest {
+    @Test fun curveContextStopsWhenKnotsCannotBeBracketed() {
+        val t = Instant.EPOCH
+        assertFailsWith<IllegalArgumentException> {
+            curveKnots(t, t.plusSeconds(3600), 3600.0, 12 * 3600.0) { _, _ -> listOf(t to 1.0) }
+        }
+        assertEquals(emptyList(), curveKnots(t, t.plusSeconds(3600), 3600.0, 0.0) { _, _ -> emptyList() })
+    }
     @Test fun curveClampsAndResolvesCoincidentKnots() {
         val t = Instant.EPOCH
         val items = listOf(t.minusSeconds(1), t, t.plusSeconds(1800), t.plusSeconds(3600), t.plusSeconds(3601))

@@ -5,6 +5,22 @@ import kotlin.math.abs
 import kotlin.test.*
 
 class SubordinateCurrentTest {
+    @Test fun shortSlowCurrentCurvesUseSurroundingKnots() {
+        val t = Instant.parse("2026-01-01T00:00:00Z")
+        val ref = CurrentStation(listOf(HarmonicConstituent("Mf", 2.0, 0.0), HarmonicConstituent("Mm", 1.0, 0.0)))
+        val s = SubordinateCurrentStation(ref, 600.0, -600.0, 300.0, -300.0, 1.5, 0.5)
+        val events = s.events(t, t.plusSeconds(40 * 86400))
+        val (a, b) = events.zipWithNext().maxBy { secondsBetween(it.first.time, it.second.time) }
+        assertTrue(secondsBetween(a.time, b.time) > 16 * 3600)
+        val midpoint = a.time.plusSeconds((secondsBetween(a.time, b.time) / 2).toLong())
+        val from = midpoint.minusSeconds(6 * 3600)
+        val to = midpoint.plusSeconds(6 * 3600)
+        val wide = s.speeds(t, t.plusSeconds(40 * 86400), 3600.0).associateBy { it.time }
+        val narrow = s.speeds(from, to, 3600.0)
+        assertTrue(narrow.size >= 2)
+        assertTrue(abs(wide.getValue(narrow.first().time).speedKnots - wide.getValue(narrow.last().time).speedKnots) > 0.01)
+        for (point in narrow) assertEquals(wide.getValue(point.time).speedKnots, point.speedKnots, 1e-9)
+    }
     @Test fun shortSlackQueriesRetainSlowFollowingPhase() {
         val t = Instant.parse("2026-01-01T00:00:00Z")
         val references = listOf(

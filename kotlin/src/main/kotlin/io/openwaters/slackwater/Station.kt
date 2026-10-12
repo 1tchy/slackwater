@@ -7,6 +7,9 @@ class Station(constituents: List<HarmonicConstituent>, val offsetMetres: Double 
     internal val constituents = constituents.toList()
     internal val eventBracketHours = kotlin.math.PI / (2 * D2R *
         (this.constituents.filter { it.amplitude != 0.0 }.maxOfOrNull { Catalog.speed(it.name) ?: 0.0 } ?: 0.0))
+    internal val phaseSearchLimitSeconds = this.constituents.filter { it.amplitude != 0.0 }
+        .mapNotNull { Catalog.speed(it.name)?.takeIf { speed -> speed > 0.0 } }
+        .minOrNull()?.let { 360.0 / it * 3600 } ?: 0.0
     init { require(offsetMetres.isFinite()) { "Offset must be finite" } }
 
     /** Includes the start floored and end ceiled to stepSeconds. */

@@ -60,7 +60,9 @@ class SubordinateCurrentStation(
     fun speeds(from: Instant, to: Instant, stepSeconds: Double = 600.0): List<CurrentPoint> {
         val timeline = makeTimeline(from, to, stepSeconds)
         if (timeline.items.isEmpty()) return emptyList()
-        val knots = events(shifted(timeline.items.first(), -8 * 3600.0), shifted(timeline.items.last(), 8 * 3600.0))
-        return halfCosineCurve(knots.map { it.time to it.speedKnots }, timeline.items).map { CurrentPoint(it.time, it.value) }
+        val knots = curveKnots(timeline.items.first(), timeline.items.last(), 8 * 3600.0, reference.phaseSearchLimitSeconds) { from, to ->
+            events(from, to).map { it.time to it.speedKnots }
+        }
+        return halfCosineCurve(knots, timeline.items).map { CurrentPoint(it.time, it.value) }
     }
 }

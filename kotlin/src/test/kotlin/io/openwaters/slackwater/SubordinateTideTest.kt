@@ -5,6 +5,30 @@ import kotlin.math.abs
 import kotlin.test.*
 
 class SubordinateTideTest {
+    @Test fun shortSlowTideCurvesBracketHeightsAndRates() {
+        val t = Instant.parse("2026-01-01T00:00:00Z")
+        val ref = Station(listOf(HarmonicConstituent("Mm", 1.0, 0.0)))
+        val s = SubordinateTideStation(ref, 600.0, -600.0, HeightOffset.Ratio(1.5, 0.5))
+        val events = s.extremes(t, t.plusSeconds(90 * 86400))
+        val (a, b) = events.zipWithNext().maxBy { secondsBetween(it.first.time, it.second.time) }
+        assertTrue(secondsBetween(a.time, b.time) > 30 * 3600)
+        val midpoint = a.time.plusSeconds((secondsBetween(a.time, b.time) / 2).toLong())
+        val from = midpoint.minusSeconds(6 * 3600)
+        val to = midpoint.plusSeconds(6 * 3600)
+        val heights = s.heights(from, to, 3600.0)
+        val rates = s.rates(from, to, 3600.0)
+        assertTrue(heights.size >= 2)
+        val duration = secondsBetween(a.time, b.time)
+        for ((point, rate) in heights.zip(rates)) {
+            val phase = Math.PI * secondsBetween(a.time, point.time) / duration
+            val half = (a.heightMetres - b.heightMetres) / 2
+            val expected = (a.heightMetres + b.heightMetres) / 2 + half * kotlin.math.cos(phase)
+            val expectedRate = -half * Math.PI / duration * kotlin.math.sin(phase) * 3600
+            assertEquals(expected, point.heightMetres, 0.01)
+            assertEquals(expectedRate, rate.rateMetresPerHour, 1e-4)
+        }
+        assertTrue(abs(heights.last().heightMetres - heights.first().heightMetres) > 0.01)
+    }
     @Test fun defaultRateStepIsTenMinutes() {
         val t = java.time.Instant.parse("2026-01-01T00:00:00Z")
         val s = SubordinateTideStation(Station(listOf(HarmonicConstituent("S2", 1.0, 0.0))), 0.0, 0.0, HeightOffset.Ratio(1.0, 1.0))
