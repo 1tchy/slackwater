@@ -107,7 +107,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "24"
+          node-version-file: mise.toml
 
       - name: Install modules
         run: npm ci
@@ -124,7 +124,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "24"
+          node-version-file: mise.toml
 
       - name: Install modules
         run: npm ci
@@ -144,7 +144,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "24"
+          node-version-file: mise.toml
 
       - name: Install modules
         run: npm ci
@@ -224,7 +224,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "24"
+          node-version-file: mise.toml
 
       - name: Install modules
         run: npm ci
@@ -244,7 +244,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "24"
+          node-version-file: mise.toml
       - name: Install modules
         run: npm ci
 
@@ -268,7 +268,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "24"
+          node-version-file: mise.toml
 
       - name: Install modules
         run: npm ci
