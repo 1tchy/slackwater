@@ -120,6 +120,8 @@ Tests are split per-package in `packages/*/test/`. The root `vitest.config.ts` u
 
 This project uses [Changesets](https://github.com/changesets/changesets) for versioning and publishing. Each package has a `prepack` script that runs its build before `npm publish` using `tsdown`.
 
+Release automation uses Changesets CLI v3 and `changesets/action` v2. Run `npm run test:release` to check versioning, lockfile updates, beta and stable tags, and sequential publishing without publishing to npm. Versioned prerelease changesets live in `.changeset/pre/`; pending changesets stay in `.changeset/` until the next version step.
+
 ### Import Conventions
 
 **Always use `.js` extensions** in TypeScript imports:

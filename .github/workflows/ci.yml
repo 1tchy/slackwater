@@ -251,6 +251,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Check release workflow
+        run: npm run test:release
+
       - name: Publish to pkg.pr.new
         run: npx pkg-pr-new publish ./packages/*
 
