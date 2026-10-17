@@ -1,4 +1,5 @@
 {
+  "name": "slackwater-monorepo",
   "private": true,
   "type": "module",
   "scripts": {
