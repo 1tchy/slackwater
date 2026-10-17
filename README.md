@@ -7,7 +7,7 @@
   </picture>
 </h1>
 
-Tide and current predictions. This repository holds the Slackwater engine for TypeScript and Swift, and the packages built on it. The engine predicts tides and currents in both TypeScript and Swift; the CLI predicts both, and the React package predicts tides. Documentation lives at [openwaters.io/tides/slackwater](https://openwaters.io/tides/slackwater/).
+Tide and current predictions. This repository holds the Slackwater engine for TypeScript, Swift and Kotlin, and the packages built on it. The engine predicts tides and currents in TypeScript, Swift and Kotlin; the CLI predicts both, and the React package predicts tides. Documentation lives at [openwaters.io/tides/slackwater](https://openwaters.io/tides/slackwater/).
 
 > [!WARNING]
 > **Not for navigational use**
@@ -24,6 +24,7 @@ Slackwater is one name for everything Open Waters publishes about tides and curr
 | Engine   | [`slackwater`](packages/slackwater)                                           | Tide and current predictions with the station database built in, for TypeScript                                  |
 |          | [`@slackwater/engine`](packages/engine)                                       | The harmonic tide and current engine for TypeScript, with no station data attached                               |
 |          | [SlackwaterKit](swift)                                                        | The harmonic tide and current engine for Swift                                                                   |
+|          | [Slackwater for Kotlin](kotlin)                                               | The harmonic tide and current engine for Kotlin/JVM and Android, consumed from source                            |
 | CLI      | [`@slackwater/cli`](packages/cli)                                             | Tide and current predictions in your terminal: `brew install openwatersio/tap/slackwater`                        |
 | API      | [`@slackwater/api`](packages/api)                                             | HTTP API for tide and current predictions, hosted at [api.openwaters.io/tides](https://api.openwaters.io/tides/) |
 | React    | [`@slackwater/react`](packages/react)                                         | React components for tide predictions                                                                            |
@@ -272,4 +273,4 @@ Slackwater reproduces high and low tide timing with **sub-minute accuracy** and 
 
 ## License
 
-The libraries in this repository (`slackwater`, `@slackwater/engine`, `@slackwater/cli`, `@slackwater/api`, and `@slackwater/react`) are [MIT](LICENSE) licensed, and so is SlackwaterKit ([swift/LICENSE](swift/LICENSE)). The [iOS app](https://github.com/openwatersio/slackwater-ios) is GPL-3.0. The [station database](https://github.com/openwatersio/slackwater-database) code is MIT, and its station data carries a license per station: CC BY 4.0 unless noted, NOAA stations in the public domain, and some stations CC BY-NC 4.0, marked `commercial_use: false`. Every station has an `attribution` string to display wherever you show its data.
+The libraries in this repository (`slackwater`, `@slackwater/engine`, `@slackwater/cli`, `@slackwater/api`, and `@slackwater/react`) are [MIT](LICENSE) licensed, and so are SlackwaterKit ([swift/LICENSE](swift/LICENSE)) and the [Kotlin engine](kotlin). The [iOS app](https://github.com/openwatersio/slackwater-ios) is GPL-3.0. The [station database](https://github.com/openwatersio/slackwater-database) code is MIT, and its station data carries a license per station: CC BY 4.0 unless noted, NOAA stations in the public domain, and some stations CC BY-NC 4.0, marked `commercial_use: false`. Every station has an `attribution` string to display wherever you show its data.
