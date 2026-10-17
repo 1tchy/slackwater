@@ -3,6 +3,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest",
+    "test:release": "node --test scripts/release.test.mjs",
     "coverage": "vitest run --coverage",
     "build": "npm run build --workspaces --if-present && tsc",
     "lint": "oxlint && prettier --check .",
@@ -19,7 +20,7 @@
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.7.0",
-    "@changesets/cli": "^2.29.8",
+    "@changesets/cli": "^3.0.3",
     "@types/make-fetch-happen": "^10.0.4",
     "@types/node": "^26.0.1",
     "@vitest/coverage-v8": "^4.0.15",
