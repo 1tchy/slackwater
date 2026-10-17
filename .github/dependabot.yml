@@ -4,7 +4,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 100
+    open-pull-requests-limit: 5
     # vitest and every @vitest/* package pin each other's exact version, so a
     # bump to one alone fails `npm ci` with ERESOLVE before a test runs.
     groups:
@@ -12,8 +12,30 @@ updates:
         patterns:
           - "vitest"
           - "@vitest/*"
+      storybook:
+        patterns:
+          - "storybook"
+          - "@storybook/*"
+      npm-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 100
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+      github-actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
