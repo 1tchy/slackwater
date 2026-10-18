@@ -1,0 +1,126 @@
+// SPDX-License-Identifier: MIT
+// Adapted from https://github.com/openwatersio/slackwater-ios/blob/f6750e9/Slackwater/IwlsClient.swift and ChsFitService.swift; relicensed by the copyright holder.
+import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
+public enum IwlsFetch {
+    public static let resolveToleranceKm = 3.0
+
+    public static func localMidnight(now: Date, timeZone: TimeZone) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        return calendar.startOfDay(for: now)
+    }
+
+    public static func chunkPlan(days: Double, end: Date) -> [ChsChunk] {
+        let week = 7 * 86_400.0
+        let endS = end.timeIntervalSince1970
+        var out: [ChsChunk] = []
+        var t = (((endS - days * 86_400) / week).rounded(.down)) * week
+        while t < endS {
+            out.append(ChsChunk(start: Date(timeIntervalSince1970: t),
+                                end: Date(timeIntervalSince1970: min(t + week, endS))))
+            t += week
+        }
+        return out.reversed()
+    }
+
+    public static func resolve(name: String, latitude: Double, longitude: Double,
+                                    series: String, in list: [IwlsStation]) throws -> IwlsStation {
+        let candidates = list.filter { st in st.timeSeries.contains { $0.code == series } }
+        guard let best = candidates.min(by: {
+            distanceKm(latitude, longitude, $0.latitude, $0.longitude) <
+            distanceKm(latitude, longitude, $1.latitude, $1.longitude)
+        }) else { throw IwlsError.permanent("no IWLS station serves \(series)") }
+        let km = distanceKm(latitude, longitude, best.latitude, best.longitude)
+        guard km <= resolveToleranceKm else {
+            throw IwlsError.permanent("\(name): nearest \(series) station \(best.officialName) is \(String(format: "%.1f", km)) km away")
+        }
+        return best
+    }
+    public static let maxAttempts = 4
+
+    public static func isTransient(_ error: Error) -> Bool {
+        if let url = error as? URLError { return transientCodes.contains(url.code) }
+        let ns = error as NSError
+        return ns.domain == NSPOSIXErrorDomain && [Int(ECONNABORTED), Int(ECONNRESET), Int(ETIMEDOUT)].contains(ns.code)
+    }
+
+    private static let transientCodes: Set<URLError.Code> = [
+        .timedOut, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
+        .networkConnectionLost, .notConnectedToInternet, .resourceUnavailable,
+        .badServerResponse, .zeroByteResource,
+    ]
+
+    public static func retryDelay(after outcome: Result<Int, Error>, attempt: Int,
+                           retryAfter: Double? = nil) -> Double? {
+        guard attempt < maxAttempts else { return nil }
+        let backoff = pow(2, Double(attempt))
+        switch outcome {
+        case .failure(let error):
+            return isTransient(error) ? backoff : nil
+        case .success(429):
+            return max(retryAfter ?? 0, 60)
+        case .success(let status):
+            guard (500...599).contains(status), ![501, 505, 511].contains(status) else { return nil }
+            return max(retryAfter ?? 0, backoff)
+        }
+    }
+
+    public static func terminalError(status code: Int) -> IwlsError {
+        (400...499).contains(code) && code != 429
+            ? .permanent("HTTP \(code)") : .transient("HTTP \(code)")
+    }
+
+    public static func decode(_ data: Data) throws -> [ChsSample] {
+        let iso = ISO8601DateFormatter()
+        let raw = try JSONDecoder().decode([IwlsSample].self, from: data)
+        var out: [ChsSample] = []
+        for s in raw {
+            guard let date = iso.date(from: s.eventDate) else { continue }
+            let ms = date.timeIntervalSince1970 * 1000
+            if out.last?.t != ms { out.append(ChsSample(t: ms, v: s.value)) }
+        }
+        return out
+    }
+
+    public static func onGrid(_ samples: [ChsSample]) -> [ChsSample] {
+        samples.filter { $0.t.truncatingRemainder(dividingBy: 900_000) == 0 }
+    }
+
+    public static func dataURL(_ code: String, stationID: String, chunk: ChsChunk) throws -> URL {
+        guard !stationID.isEmpty, !code.isEmpty,
+              chunk.start.timeIntervalSince1970.isFinite, chunk.end.timeIntervalSince1970.isFinite,
+              chunk.end >= chunk.start, chunk.end.timeIntervalSince(chunk.start) <= 7 * 86400 else {
+            throw IwlsError.permanent("invalid IWLS series request")
+        }
+        var url = URLComponents(string: IwlsClient.base)!
+        // Encode the ID as one path component, even when the caller supplies reserved characters.
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "/%?#")
+        let id = stationID.addingPercentEncoding(withAllowedCharacters: allowed)!
+        url.percentEncodedPath += "/stations/\(id)/data"
+        let iso = ISO8601DateFormatter()
+        url.queryItems = [
+            URLQueryItem(name: "time-series-code", value: code),
+            URLQueryItem(name: "from", value: iso.string(from: chunk.start)),
+            URLQueryItem(name: "to", value: iso.string(from: chunk.end)),
+            URLQueryItem(name: "resolution", value: "FIFTEEN_MINUTES")
+        ]
+        return url.url!
+    }
+}
+
+private func distanceKm(_ lat1: Double, _ lon1: Double, _ lat2: Double, _ lon2: Double) -> Double {
+    let p1 = lat1 * .pi / 180, p2 = lat2 * .pi / 180
+    let dp = p2 - p1, dl = (lon2 - lon1) * .pi / 180
+    let h = sin(dp / 2) * sin(dp / 2) + cos(p1) * cos(p2) * sin(dl / 2) * sin(dl / 2)
+    return 2 * 6371.0088 * asin(min(1, sqrt(h)))
+}
