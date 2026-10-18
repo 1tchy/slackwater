@@ -122,6 +122,12 @@ This project uses [Changesets](https://github.com/changesets/changesets) for ver
 
 Release automation uses Changesets CLI v3 and `changesets/action` v2. Run `npm run test:release` to check versioning, lockfile updates, beta and stable tags, and sequential publishing without publishing to npm. Versioned prerelease changesets live in `.changeset/pre/`; pending changesets stay in `.changeset/` until the next version step.
 
+### Release Notes
+
+Each changeset summary becomes a line in the release notes, so write it for the people using Slackwater: say what changed for them, not how it was implemented, and keep to one change per changeset. Follow the org guidance on [release titles and notes](https://github.com/openwatersio/.github/blob/main/docs/agents/releases.md#release-notes).
+
+After the release workflow publishes, give the release for the umbrella `slackwater` package a headline that says what changed, in sentence case with no version and no closing period: `gh release edit slackwater@<version> --repo openwatersio/slackwater --title "<headline>"`. The [openwaters.io/updates](https://openwaters.io/updates/) page groups one publish run into one entry titled from that release.
+
 ### Import Conventions
 
 **Always use `.js` extensions** in TypeScript imports:
@@ -159,4 +165,4 @@ For background on tidal harmonic prediction concepts (constituents, node correct
 - Always add corresponding tests and verify with `npm run coverage`. **100% test coverage is required** for pull requests to be merged.
 - Update this CONTRIBUTING.md document with any relevant architectural notes or patterns related to the new feature.
 - Ensure the `README.md` files in the relevant packages are updated with usage instructions and examples for the new feature.
-- Use `npm run changeset` to create a changeset for the new feature, which will help with versioning and release notes when publishing.
+- Use `npm run changeset` to create a changeset for the new feature, which feeds versioning and the release notes (see [Release Notes](#release-notes)).
