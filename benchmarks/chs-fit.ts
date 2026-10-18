@@ -186,7 +186,6 @@ for (const holdout of HOLDOUT_DAYS) {
   console.log(`+${holdout} d:`, { count: rows.length, passing, p50RmseCm: p50, p90RmseCm: p90 });
 
   expect(rows.length, `+${holdout} d stations scored`).toBeGreaterThan(0);
-  if (FAST) continue;
   // Baseline expectations from the first run (fit ending 2026-10-01) in
   // docs/validation/chs-tides.md, with margin for other seasons. Most misses
   // are the seasonal mean level; move these toward the bar as the recipe
