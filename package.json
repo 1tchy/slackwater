@@ -13,6 +13,7 @@
     "benchmarks": "run-s --continue-on-error \"benchmarks:*\"",
     "benchmarks:noaa": "node benchmarks/noaa.ts",
     "benchmarks:chs": "node benchmarks/chs.ts",
+    "benchmarks:chs-fit": "node benchmarks/chs-fit.ts",
     "benchmarks:extremes": "node benchmarks/extremes.ts",
     "benchmarks:subordinate-datums": "node benchmarks/subordinate-datums.ts",
     "changeset": "changeset",
