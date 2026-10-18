@@ -102,6 +102,46 @@
         }
       ],
       "expectedID": "first"
+    },
+    {
+      "name": "just-within-three-km",
+      "latitude": 0,
+      "longitude": 0,
+      "series": "wlp",
+      "stations": [
+        {
+          "id": "edge",
+          "officialName": "Edge",
+          "latitude": 0.026970617708098894,
+          "longitude": 0,
+          "timeSeries": [
+            {
+              "code": "wlp"
+            }
+          ]
+        }
+      ],
+      "expectedID": "edge"
+    },
+    {
+      "name": "just-outside-three-km",
+      "latitude": 0,
+      "longitude": 0,
+      "series": "wlp",
+      "stations": [
+        {
+          "id": "edge",
+          "officialName": "Edge",
+          "latitude": 0.02698860411537339,
+          "longitude": 0,
+          "timeSeries": [
+            {
+              "code": "wlp"
+            }
+          ]
+        }
+      ],
+      "expectedID": null
     }
   ],
   "midnights": [
@@ -188,6 +228,48 @@
         [
           4838400,
           5443200
+        ],
+        [
+          4233600,
+          4838400
+        ],
+        [
+          3628800,
+          4233600
+        ],
+        [
+          3024000,
+          3628800
+        ],
+        [
+          2419200,
+          3024000
+        ],
+        [
+          1814400,
+          2419200
+        ],
+        [
+          1209600,
+          1814400
+        ],
+        [
+          604800,
+          1209600
+        ],
+        [
+          0,
+          604800
+        ]
+      ]
+    },
+    {
+      "days": 60,
+      "endSeconds": 5184000,
+      "expected": [
+        [
+          4838400,
+          5184000
         ],
         [
           4233600,
@@ -314,6 +396,30 @@
         {
           "t": 900000,
           "v": 3
+        }
+      ]
+    },
+    {
+      "raw": [
+        {
+          "eventDate": "1970-01-01T00:15:00.000Z",
+          "value": 99
+        },
+        {
+          "eventDate": "1970-01-01T01:15:00+01:00",
+          "value": 2
+        }
+      ],
+      "expected": [
+        {
+          "t": 900000,
+          "v": 2
+        }
+      ],
+      "grid": [
+        {
+          "t": 900000,
+          "v": 2
         }
       ]
     }

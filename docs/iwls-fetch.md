@@ -30,7 +30,7 @@ Use `GET /stations/{resolvedID}/data` with query parameters:
 - `from`, `to`: the chunk's UTC ISO 8601 endpoints, with second precision and `Z` suffix.
 - `resolution=FIFTEEN_MINUTES`.
 
-Both endpoints are inclusive. Decode the response array's `eventDate` and numeric `value` fields, keeping response order. Reject malformed JSON or missing required fields. Skip unparseable dates. Remove a timestamp only when it equals the last successfully appended timestamp in that response; retain its first value. This is adjacent suppression, not a global deduplication or a sort.
+Both endpoints are inclusive. Decode the response array's `eventDate` and numeric `value` fields, keeping response order. Reject malformed JSON or missing required fields. Accept ISO 8601 date-times with whole seconds and a UTC designator or numeric offset; skip unparseable dates and fractional-second strings, including `.000Z`. Remove a timestamp only when it equals the last successfully appended timestamp in that response; retain its first value. This is adjacent suppression, not a global deduplication or a sort.
 
 Represent a decoded sample as `{t, v}`, where `t` is Unix epoch milliseconds and `v` is the provider value without unit conversion. Tide heights are in meters, current speeds in knots, and directions in degrees. The consumer projects speed and direction before fitting.
 
