@@ -20,6 +20,7 @@ public enum IwlsFetch {
     }
 
     public static func chunkPlan(days: Double, end: Date) -> [ChsChunk] {
+        precondition(days.isFinite && days > 0, "chunkPlan needs a positive, finite duration")
         let week = 7 * 86_400.0
         let endS = end.timeIntervalSince1970
         var out: [ChsChunk] = []
@@ -59,18 +60,25 @@ public enum IwlsFetch {
         .badServerResponse, .zeroByteResource,
     ]
 
+    /// The longest `Retry-After` the client waits out itself. A longer ask ends the request
+    /// as transient, so one header cannot hold the queue for hours.
+    public static let maxRetryAfter = 600.0
+
     public static func retryDelay(after outcome: Result<Int, Error>, attempt: Int,
                            retryAfter: Double? = nil) -> Double? {
         guard attempt < maxAttempts else { return nil }
         let backoff = pow(2, Double(attempt))
+        // `max` passes NaN through, and sleeping for NaN or infinity traps.
+        let asked = retryAfter.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil } ?? 0
+        guard asked <= maxRetryAfter else { return nil }
         switch outcome {
         case .failure(let error):
             return isTransient(error) ? backoff : nil
         case .success(429):
-            return max(retryAfter ?? 0, 60)
+            return max(asked, 60)
         case .success(let status):
             guard (500...599).contains(status), ![501, 505, 511].contains(status) else { return nil }
-            return max(retryAfter ?? 0, backoff)
+            return max(asked, backoff)
         }
     }
 
@@ -95,8 +103,11 @@ public enum IwlsFetch {
         samples.filter { $0.t.truncatingRemainder(dividingBy: 900_000) == 0 }
     }
 
+    public static let fitSeries: Set<String> = ["wlp", "wcsp1", "wcdp1"]
+
     public static func dataURL(_ code: String, stationID: String, chunk: ChsChunk) throws -> URL {
-        guard !stationID.isEmpty, !code.isEmpty,
+        // Only the fit series: the 15-minute grid filter would silently drop event series like wlp-hilo.
+        guard !stationID.isEmpty, fitSeries.contains(code),
               chunk.start.timeIntervalSince1970.isFinite, chunk.end.timeIntervalSince1970.isFinite,
               chunk.end >= chunk.start, chunk.end.timeIntervalSince(chunk.start) <= 7 * 86400 else {
             throw IwlsError.permanent("invalid IWLS series request")

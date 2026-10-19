@@ -20,13 +20,13 @@ For a nominal positive, finite duration `days`, an end instant `end` in epoch se
 
 Here `days` denotes an elapsed fit duration. Calendar arithmetic determines the midnight anchor; fixed seconds determine the absolute cache grid. Floor rounds toward negative infinity, including before 1970. A plan spans at least N and less than N + 7 elapsed days. It has no zero-length chunk when the end falls on the grid. The newest portion of a 210-day plan equals the 60-day plan at the same end. Consumers concatenate the complete chunks, including the oldest chunk's extra samples.
 
-Each request spans at most seven elapsed days. Full chunks have stable identities `(resolvedID, series, startEpochSeconds)`. Only chunks with a full 604800-second duration are cacheable. Partial chunks must be fetched again when their end changes. Storage, eviction, backup exclusion, and resume UI belong to the application. The iOS adapter caches the station list for seven elapsed days and falls back to a stale decoded list after a fetch failure.
+Each request spans at most seven elapsed days. Full chunks have stable identities `(resolvedID, series, startEpochSeconds)`. Only chunks with a full 604800-second duration are cacheable, and only when they decoded at least one on-grid sample, so an empty or wholly skipped response is fetched again rather than kept as a missing week. A truncated but non-empty response is not detected. Partial chunks must be fetched again when their end changes. Storage, eviction, backup exclusion, and resume UI belong to the application. The iOS adapter caches the station list for seven elapsed days and falls back to a stale decoded list after a fetch failure.
 
 ## Request and decode samples
 
 Use `GET /stations/{resolvedID}/data` with query parameters:
 
-- `time-series-code`: the requested series, including `wlp`, `wcsp1`, or `wcdp1`.
+- `time-series-code`: one of the fit series `wlp`, `wcsp1`, or `wcdp1`. Reject any other code: the grid filter below would empty event series such as `wlp-hilo`.
 - `from`, `to`: the chunk's UTC ISO 8601 endpoints, with second precision and `Z` suffix.
 - `resolution=FIFTEEN_MINUTES`.
 
@@ -42,7 +42,7 @@ For current axes, use `GET /stations/{resolvedID}/metadata` and decode optional 
 
 ## Pace, retry, and cancel
 
-All client instances in a process share a pacer. Reserve request starts at least 2.5 seconds apart, including station-list, metadata, and retry attempts. A serial download queue is application policy; pacing alone does not limit in-flight requests. The default Swift URLSession waits for connectivity on Apple platforms and has a 300-second resource timeout. Callers that supply a session own its configuration.
+All client instances in a process share a pacer. Reserve request starts at least 2.5 seconds apart on a monotonic clock, including station-list, metadata, and retry attempts, so a wall-clock change cannot stretch the gap. A serial download queue is application policy; pacing alone does not limit in-flight requests. The default Swift URLSession waits for connectivity on Apple platforms and has a 300-second resource timeout. While it waits, an offline device or one denied cellular data fails each attempt as a timeout after 300 seconds rather than at once, and timeouts are retried, so a request can hold the queue for about 20 minutes before it fails. The resource timeout covers the whole transfer, so a link too slow to finish a response in 300 seconds fails the same way. Callers that supply a session own its configuration.
 
 Try each request at most four times, including its first attempt. `attempt` in the fixture counts the attempt that just failed, starting at one. On a retry:
 
@@ -51,9 +51,9 @@ Try each request at most four times, including its first attempt. `attempt` in t
 - Transient transport failures: wait `2^attempt` seconds, giving 2, 4, and 8 seconds.
 - Other outcomes: do not retry within the client.
 
-`Retry-After` is interpreted as numeric seconds; absent or nonnumeric values use the default delay. Transient failures are timeout, connection failure, host/DNS lookup failure, lost connection, offline, unavailable resource, invalid server response, and empty response. The Swift mapping is `URLError.timedOut`, `cannotConnectToHost`, `cannotFindHost`, `dnsLookupFailed`, `networkConnectionLost`, `notConnectedToInternet`, `resourceUnavailable`, `badServerResponse`, and `zeroByteResource`, plus native POSIX `ECONNABORTED`, `ECONNRESET`, and `ETIMEDOUT`. Use each platform's errno constants; Darwin and Linux assign different numbers.
+`Retry-After` is interpreted as numeric seconds; absent, nonnumeric, negative, and non-finite values use the default delay. A value over 600 seconds ends the request without a retry, as a transient failure, so the client neither retries inside the window the server named nor holds the queue for it. Transient failures are timeout, connection failure, host/DNS lookup failure, lost connection, offline, unavailable resource, invalid server response, and empty response. The Swift mapping is `URLError.timedOut`, `cannotConnectToHost`, `cannotFindHost`, `dnsLookupFailed`, `networkConnectionLost`, `notConnectedToInternet`, `resourceUnavailable`, `badServerResponse`, and `zeroByteResource`, plus native POSIX `ECONNABORTED`, `ECONNRESET`, and `ETIMEDOUT`. Use each platform's errno constants; Darwin and Linux assign different numbers.
 
-Only HTTP 200 supplies a successful body. Do not retry body-decoding errors. Cancellation, TLS failures, and policy denials such as disallowed cellular data propagate immediately. Pacing and backoff waits are cancellable. After the last attempt, HTTP 400–499 except 429 is permanent; other HTTP failures, including an exhausted rate limit, remain transient for the application's queue. The queue owns any later retry schedule.
+Only HTTP 200 supplies a successful body. Do not retry body-decoding errors. Cancellation, TLS failures, and policy denials such as disallowed cellular data propagate immediately when the session reports them; the default session's wait above reports them as timeouts. Pacing and backoff waits are cancellable. After the last attempt, HTTP 400–499 except 429 is permanent; other HTTP failures, including an exhausted rate limit, remain transient for the application's queue. The queue owns any later retry schedule.
 
 ## Scope and licensing
 

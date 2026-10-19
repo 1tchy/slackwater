@@ -20,6 +20,6 @@ for chunk in IwlsFetch.chunkPlan(days: 60, end: end) {
 samples.sort { $0.t < $1.t }
 ```
 
-The caller owns cache storage, queueing, and fitting. Use `ChsChunk.isCacheable` for full-week chunks and `IwlsFetch.onGrid` when loading cached samples. Preserve repeated timestamps when concatenating responses. `IwlsClient.metadata(stationID:)` retrieves current flood/ebb axes. The optional request observer receives elapsed seconds for each attempt, including pacing, so an application can track download estimates. A supplied `URLSession` owns its connectivity and timeout settings.
+The caller owns cache storage, queueing, and fitting. Use `ChsChunk.canCache(_:)` before storing a fetched chunk, which refuses partial weeks and empty responses, and `IwlsFetch.onGrid` when loading cached samples. Preserve repeated timestamps when concatenating responses. `IwlsClient.metadata(stationID:)` retrieves current flood/ebb axes. The optional request observer receives elapsed seconds for each attempt, including pacing, so an application can track download estimates. A supplied `URLSession` owns its connectivity and timeout settings.
 
 This client is for direct fetching on a user's device. It grants no right to redistribute CHS predictions through an API or CLI. The fixtures use synthetic values. See [LICENSE](LICENSE) for the module's MIT license and [the contract](../../../docs/iwls-fetch.md) for decoding, retries, and compatibility tests.

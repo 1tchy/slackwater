@@ -26,11 +26,29 @@ private actor Server {
     func pause(_ delay: Double) { delays.append(delay) }
     func observe(_ seconds: Double) { observations += 1 }
     func snapshot() -> ([URL], [Double], Int) { (urls, delays, observations) }
-    func client() -> IwlsClient {
+    func client(pacing interval: TimeInterval = 0) -> IwlsClient {
         IwlsClient(transport: { try await self.respond($0) },
-            pause: { await self.pause($0) }, pacer: IwlsPacer(interval: 0),
+            pause: { await self.pause($0) }, pacer: IwlsPacer(interval: interval),
             observeRequest: { await self.observe($0) })
     }
+}
+
+@Test func clientIgnoresRetryAfterHeadersItCannotSleepFor() async throws {
+    for header in ["nan", "inf", "-5"] {
+        let server = Server([.success(429), .success(200)], retryAfter: header)
+        let client = await server.client()
+        #expect(try await client.stationList().isEmpty)
+        let (_, delays, _) = await server.snapshot()
+        #expect(delays == [60], "Retry-After: \(header)")
+    }
+}
+
+@Test func retryAttemptsWaitForThePacer() async throws {
+    let server = Server([.success(503), .success(200)])
+    let client = await server.client(pacing: 0.05)
+    let began = ContinuousClock.now
+    #expect(try await client.stationList().isEmpty)
+    #expect(ContinuousClock.now - began >= .milliseconds(50))
 }
 
 @Test func clientRetriesRateLimitsAndDecodesGridSamples() async throws {
@@ -114,10 +132,14 @@ private actor Server {
         #expect(throws: IwlsError.self) { try IwlsFetch.dataURL("wlp", stationID: "id", chunk: chunk) }
     }
     let chunk = ChsChunk(start: .init(timeIntervalSince1970: 0), end: .init(timeIntervalSince1970: 900))
-    let url = try IwlsFetch.dataURL("wlp&bad=1", stationID: "id/path?bad=2", chunk: chunk)
+    let url = try IwlsFetch.dataURL("wcsp1", stationID: "id/path?bad=2", chunk: chunk)
     #expect(url.absoluteString.contains("id%2Fpath%3Fbad=2/data"))
     let parts = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
-    #expect(parts.queryItems?.first?.value == "wlp&bad=1")
+    #expect(parts.queryItems?.first?.value == "wcsp1")
+    // Off-grid event series and anything else outside the fit series are refused, not filtered to nothing.
+    for code in ["wlp-hilo", "wcp1-events", "", "wlp&bad=1"] {
+        #expect(throws: IwlsError.self) { try IwlsFetch.dataURL(code, stationID: "id", chunk: chunk) }
+    }
 }
 
 private final class SuccessProtocol: URLProtocol, @unchecked Sendable {
@@ -130,6 +152,11 @@ private final class SuccessProtocol: URLProtocol, @unchecked Sendable {
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
+}
+
+@Test func publicClientsShareTheProcessPacer() {
+    #expect(IwlsClient().requestPacer === IwlsClient.pacer)
+    #expect(IwlsClient(session: .shared).requestPacer === IwlsClient.pacer)
 }
 
 @Test func publicClientUsesURLSession() async throws {
