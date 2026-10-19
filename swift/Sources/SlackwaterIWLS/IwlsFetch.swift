@@ -60,8 +60,9 @@ public enum IwlsFetch {
         .badServerResponse, .zeroByteResource,
     ]
 
-    /// The longest `Retry-After` the client waits out itself. A longer ask ends the request
-    /// as transient, so one header cannot hold the queue for hours.
+    /// The longest `Retry-After` the client waits, so one header cannot hold the queue for
+    /// hours. A longer ask waits this long instead: failing at once would let the app's queue
+    /// send every other job into the window the server is limiting.
     public static let maxRetryAfter = 600.0
 
     public static func retryDelay(after outcome: Result<Int, Error>, attempt: Int,
@@ -69,8 +70,7 @@ public enum IwlsFetch {
         guard attempt < maxAttempts else { return nil }
         let backoff = pow(2, Double(attempt))
         // `max` passes NaN through, and sleeping for NaN or infinity traps.
-        let asked = retryAfter.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil } ?? 0
-        guard asked <= maxRetryAfter else { return nil }
+        let asked = retryAfter.flatMap { $0.isFinite && $0 >= 0 ? min($0, maxRetryAfter) : nil } ?? 0
         switch outcome {
         case .failure(let error):
             return isTransient(error) ? backoff : nil
