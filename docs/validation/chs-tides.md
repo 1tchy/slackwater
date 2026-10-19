@@ -43,7 +43,7 @@ Ports are spread deliberately, because whatever does vary with window length wil
 
 ## The bar (set before scoring)
 
-There is no written tide bar in this repo; the currents bar in [CHS current validation](https://github.com/openwatersio/slackwater-ios/blob/main/docs/validation/chs-currents.md) is the precedent, and this one follows its shape — one clause per number a person actually reads, tightest on the quantity they act on.
+There is no written tide bar in this repo; the currents bar in [CHS current validation](chs-currents.md) is the precedent, and this one follows its shape — one clause per number a person actually reads, tightest on the quantity they act on.
 
 Height is not slack. Nobody transits a tide port _at_ high water the way a gate is transited at slack, so the timing clauses are the engine's established maxima bar rather than the tighter safety numbers currents earned. What a skipper does act on is the height itself, for underkeel clearance.
 
