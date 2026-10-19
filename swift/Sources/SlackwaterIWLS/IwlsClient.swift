@@ -6,18 +6,18 @@ import FoundationNetworking
 #endif
 
 public actor IwlsPacer {
-    private let interval: TimeInterval
-    private var last = Date.distantPast
+    private let interval: Duration
+    // Monotonic, so a wall-clock step back cannot stall every client in the process.
+    private var last: ContinuousClock.Instant?
 
-    public init(interval: TimeInterval = 2.5) { self.interval = interval }
+    public init(interval: TimeInterval = 2.5) { self.interval = .seconds(interval) }
 
     public func wait() async throws {
         try Task.checkCancellation()
-        let now = Date.now
-        let slot = max(now, last.addingTimeInterval(interval))
+        let now = ContinuousClock.now
+        let slot = last.map { max(now, $0 + interval) } ?? now
         last = slot
-        let gap = slot.timeIntervalSince(now)
-        if gap > 0 { try await Task.sleep(for: .seconds(gap)) }
+        if slot > now { try await Task.sleep(until: slot, clock: .continuous) }
     }
 }
 
@@ -26,7 +26,7 @@ public struct IwlsClient: Sendable {
     public static let pacer = IwlsPacer()
     private let transport: @Sendable (URL) async throws -> (Data, URLResponse)
     private let pause: @Sendable (Double) async throws -> Void
-    private let requestPacer: IwlsPacer
+    let requestPacer: IwlsPacer
     private let observeRequest: @Sendable (TimeInterval) async -> Void
 
     private static let session: URLSession = {
@@ -88,7 +88,7 @@ public struct IwlsClient: Sendable {
         while true {
             try Task.checkCancellation()
             attempt += 1
-            let began = Date.now
+            let began = ContinuousClock.now
             let result: Result<(Data, URLResponse), any Error>
             do {
                 try await requestPacer.wait()
@@ -96,7 +96,8 @@ public struct IwlsClient: Sendable {
             } catch {
                 result = .failure(error)
             }
-            await observeRequest(Date.now.timeIntervalSince(began))
+            let elapsed = (ContinuousClock.now - began).components
+            await observeRequest(Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18)
             let outcome: Result<Int, any Error>
             let retryAfter: Double?
             switch result {

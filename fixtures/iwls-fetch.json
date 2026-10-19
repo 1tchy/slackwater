@@ -551,6 +551,36 @@
       "attempt": 1,
       "retryAfter": null,
       "delay": null
+    },
+    {
+      "status": 429,
+      "attempt": 1,
+      "retryAfter": 1e30,
+      "delay": null
+    },
+    {
+      "status": 429,
+      "attempt": 1,
+      "retryAfter": 600,
+      "delay": 600
+    },
+    {
+      "status": 429,
+      "attempt": 1,
+      "retryAfter": -5,
+      "delay": 60
+    },
+    {
+      "status": 503,
+      "attempt": 1,
+      "retryAfter": 86400,
+      "delay": null
+    },
+    {
+      "status": 503,
+      "attempt": 1,
+      "retryAfter": -5,
+      "delay": 2
     }
   ]
 }

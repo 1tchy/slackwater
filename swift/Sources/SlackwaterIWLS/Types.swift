@@ -37,6 +37,9 @@ public struct ChsChunk: Equatable, Hashable, Sendable {
     public let end: Date
     public init(start: Date, end: Date) { self.start = start; self.end = end }
     public var isCacheable: Bool { end.timeIntervalSince(start) == 7 * 86400 }
+    /// Whether these on-grid samples may be kept for this chunk. A full chunk's identity never
+    /// changes, so caching an empty response would keep a missing week for good.
+    public func canCache(_ samples: [ChsSample]) -> Bool { isCacheable && !samples.isEmpty }
 }
 
 public enum IwlsError: Error, Equatable, LocalizedError {

@@ -79,6 +79,11 @@ private func fixture() throws -> Fixture {
     #expect(Array(full.prefix(fast.count)) == fast)
     let tomorrow = IwlsFetch.chunkPlan(days: 210, end: end.addingTimeInterval(86400))
     #expect(Set(full.filter(\.isCacheable)).intersection(tomorrow.filter(\.isCacheable)).count >= 28)
+    let week = try #require(full.first { $0.isCacheable })
+    #expect(week.canCache([ChsSample(t: week.start.timeIntervalSince1970 * 1000, v: 1)]))
+    #expect(!week.canCache([]), "an empty week must be fetched again")
+    let partial = ChsChunk(start: .init(timeIntervalSince1970: 0), end: .init(timeIntervalSince1970: 900))
+    #expect(!partial.canCache([ChsSample(t: 0, v: 1)]))
 }
 
 @Test func decodingAndCachedSamplesKeepTheFitGrid() throws {
@@ -117,6 +122,11 @@ private func fixture() throws -> Fixture {
     }
     for error: any Error in [URLError(.cancelled), URLError(.secureConnectionFailed), URLError(.dataNotAllowed), CancellationError(), NSError(domain: "other", code: 53)] {
         #expect(IwlsFetch.retryDelay(after: .failure(error), attempt: 1) == nil)
+    }
+    // JSON cannot carry these, and `Double("nan")` and `Double("inf")` both parse a header.
+    for header in [Double.nan, .infinity, -.infinity] {
+        #expect(IwlsFetch.retryDelay(after: .success(429), attempt: 1, retryAfter: header) == 60)
+        #expect(IwlsFetch.retryDelay(after: .success(503), attempt: 1, retryAfter: header) == 2)
     }
     #expect(IwlsFetch.terminalError(status: 404) == .permanent("HTTP 404"))
     #expect(IwlsFetch.terminalError(status: 429) == .transient("HTTP 429"))
