@@ -239,6 +239,12 @@ Callers choose a resolvable basis and validate predictions on held-out observati
 
 `chsTideFit` is the recipe every Slackwater client uses to fit a Canadian Hydrographic Service tide port from IWLS `wlp` predictions: `chsTideFit.days` of samples on a `chsTideFit.sampleMinutes` grid, fitted with `fit(samples, chsTideFit.basis)`. Swift's and Kotlin's `ChsTideFit` carry the same values, checked against `fixtures/chs-tide-fit.json`. `benchmarks/chs-fit.ts` scores the recipe against CHS's own predictions on held-out weeks, and [CHS tide fit validation](../../docs/validation/chs-tides.md) records the bar and the results.
 
+### CHS current gates
+
+`chsCurrentFit` is the recipe for a Canadian Hydrographic Service current gate. Fetch IWLS `chsCurrentFit.speedSeries` (`wcsp1`) and `chsCurrentFit.directionSeries` (`wcdp1`) on a `chsCurrentFit.sampleMinutes` grid, combine them into signed flood-axis velocity with `projectChsCurrent(speeds, directions, floodDirection)`, using the flood direction from the station's IWLS metadata, and fit with `fit(samples, chsCurrentFit.basis)`. Predict with `createCurrentPredictor(result.constituents, { floodDirection, ebbDirection, meanFlow: result.offset })`.
+
+Each gate fits over one of `chsCurrentFit.days`, chosen per gate from validation. A 210-day gate can show the fit of its trailing 60 days first as a provisional answer, when that fit's measured worst slack error is at most `chsCurrentFit.provisionalSlackMaxMinutes`. Swift's and Kotlin's `ChsCurrentFit` carry the same recipe, checked against `fixtures/chs-current-fit.json`. `benchmarks/chs-current-fit.ts` scores every window against CHS's published `wcp1-events`, and [CHS current fit validation](../../docs/validation/chs-currents.md) records the bar and the results.
+
 ## Data definitions
 
 ### <a name="constituent-object"></a>Constituent definition

@@ -6,6 +6,8 @@ import java.time.Instant
 data class HarmonicConstituent(val name: String, val amplitude: Double, val phaseDegrees: Double) {
     init { require(amplitude.isFinite() && phaseDegrees.isFinite()) { "Constituent constants must be finite" } }
 }
+/** One observation or prediction a harmonic fit is made from. */
+data class HarmonicSample(val time: Instant, val value: Double)
 data class TidePoint(val time: Instant, val heightMetres: Double)
 data class TideRatePoint(val time: Instant, val rateMetresPerHour: Double)
 enum class ExtremeKind { HIGH, LOW }
