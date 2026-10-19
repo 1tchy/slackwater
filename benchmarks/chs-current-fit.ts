@@ -44,11 +44,20 @@ const MATCH_WINDOW_MIN = 180;
 const REVERSED_SHARE = 0.6;
 // Gates are matched to IWLS stations by position, never by name.
 const RESOLVE_KM = 3;
+// Curated gates with no current station of their own: Malibu Rapids' slack
+// derives from a tide port. Every other gate counts toward the share floors
+// below, scored or not.
+const NOT_FITTED = new Set(["chs-malibu-rapids"]);
 
 await mkdir(".test-cache", { recursive: true });
 
+// FIT_END=YYYY-MM-DD reproduces a recorded run; the fit ends at 00:00 UTC
+// that day.
 const now = new Date();
-const fitEnd = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+const fitEnd = process.env.FIT_END
+  ? Date.parse(`${process.env.FIT_END}T00:00:00Z`)
+  : Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+if (Number.isNaN(fitEnd)) throw new Error(`FIT_END is not a date: ${process.env.FIT_END}`);
 const longest = Math.max(...chsCurrentFit.days);
 const stamp = new Date(fitEnd).toISOString().slice(0, 10);
 
@@ -107,7 +116,7 @@ for (const gate of gates) {
     `stations/${station.id}/metadata`,
     `${station.code}-metadata`,
   );
-  if (meta.floodDirection === undefined || meta.ebbDirection === undefined) {
+  if (meta.floodDirection == null || meta.ebbDirection == null) {
     skipped.push(`${gate.id} (no flood axis)`);
     continue;
   }
@@ -186,7 +195,7 @@ for (const gate of gates) {
       }
 
       const slackMedian = median(slackErrors);
-      const slackWorst = Math.max(...slackErrors);
+      const slackWorst = slackErrors.length ? Math.max(...slackErrors) : NaN;
       const extremaMedian = median(extremaErrors);
       const speedMedian = median(speedErrors);
       const reversed = extrema > 0 && wrongSign / extrema >= REVERSED_SHARE;
@@ -240,7 +249,8 @@ csv.end();
 
 // What each gate's first held-out week supports: the shortest window that
 // passes, and for a longer one, the provisional slack bound its 60-day fit
-// earns, rounded up to 5 minutes.
+// earns, rounded up to 5 minutes. A 60-day fit that missed a slack has no
+// bound. One week of one run is a reading, not a curated value.
 const [shortest] = chsCurrentFit.days;
 const first = HOLDOUT_DAYS[0];
 const dispositions = Object.fromEntries(
@@ -250,25 +260,42 @@ const dispositions = Object.fromEntries(
     const passing = chsCurrentFit.days.find((d) => rows.find((s) => s.fit_days === d)?.pass);
     if (passing === undefined) return [[gate.id, "fails"]];
     if (passing === shortest) return [[gate.id, `${passing} d`]];
-    const worst = rows.find((s) => s.fit_days === shortest)?.slack_worst_min ?? NaN;
+    const short = rows.find((s) => s.fit_days === shortest);
+    const worst = short && short.slack_matched === short.slacks ? short.slack_worst_min : NaN;
     const bound = Math.ceil(worst / 5) * 5;
     const provisional =
-      bound <= chsCurrentFit.provisionalSlackMaxMinutes
+      Number.isFinite(bound) && bound <= chsCurrentFit.provisionalSlackMaxMinutes
         ? `provisional ±${bound} min`
         : "no provisional";
     return [[gate.id, `${passing} d, ${provisional}`]];
   }),
 );
-console.log(`At +${first} d:`, dispositions);
+console.log(`At +${first} d, this run alone:`, dispositions);
+
+const resolved = new Map(stats.map((s) => [s.gate, s.iwls]));
+const codes = [...resolved.values()];
+const shared = [...resolved]
+  .filter(([, code]) => codes.indexOf(code) !== codes.lastIndexOf(code))
+  .map(([gate]) => gate);
+expect(shared, "gates resolved to the same IWLS station").toEqual([]);
+
+// Shares are of every gate that should be scored, so a gate IWLS stops
+// serving counts against the floor rather than leaving it to the gates that
+// remain.
+const expected = gates.filter((gate) => !NOT_FITTED.has(gate.id)).length;
 
 for (const holdout of HOLDOUT_DAYS) {
   for (const days of chsCurrentFit.days) {
     const rows = stats.filter((s) => s.holdout_days === holdout && s.fit_days === days);
     const passing = rows.filter((s) => s.pass).length;
-    const slack = rows.map((s) => s.slack_median_min).sort((a, b) => a - b);
+    const slack = rows
+      .map((s) => s.slack_median_min)
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b);
     const p50 = ntile(slack, 0.5);
     console.log(`${days} d fit, +${holdout} d:`, {
       count: rows.length,
+      expected,
       passing,
       p50SlackMedianMin: p50,
     });
@@ -278,12 +305,12 @@ for (const holdout of HOLDOUT_DAYS) {
       rows.filter((s) => s.reversed).map((s) => s.gate),
       `${days} d +${holdout} d reversed axes`,
     ).toEqual([]);
-    // Baseline expectations from the first run (fit ending 2026-10-01) in
-    // docs/validation/chs-currents.md, below its worst held-out week. Verdicts
-    // near the bar move with the season; move these toward it as the recipe
-    // improves.
-    const baseline = days === shortest ? { share: 0.1, p50: 20 } : { share: 0.3, p50: 15 };
-    expect(passing / rows.length, `${days} d +${holdout} d share passing`).toBeGreaterThanOrEqual(
+    // Baseline expectations from the run with the fit ending 2026-10-01 in
+    // docs/validation/chs-currents.md, below its worst held-out week (3 of 23
+    // at 60 d, 10 of 23 at 210 d) by at least one gate. Verdicts near the bar
+    // move with the season; move these toward it as the recipe improves.
+    const baseline = days === shortest ? { share: 0.05, p50: 20 } : { share: 0.3, p50: 15 };
+    expect(passing / expected, `${days} d +${holdout} d share passing`).toBeGreaterThanOrEqual(
       baseline.share,
     );
     expect(p50, `${days} d +${holdout} d slack median p50`).toBeLessThan(baseline.p50);
@@ -340,7 +367,8 @@ async function series(station: IwlsStation, code: string, from: number, to: numb
     );
     for (const row of rows) {
       const time = new Date(row.eventDate);
-      if (time.getTime() % STEP !== 0 || out.at(-1)?.time.getTime() === time.getTime()) continue;
+      if (typeof row.value !== "number" || time.getTime() % STEP !== 0) continue;
+      if (out.at(-1)?.time.getTime() === time.getTime()) continue;
       out.push({ time, value: row.value });
     }
   }

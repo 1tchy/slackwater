@@ -13,8 +13,8 @@ import Foundation
 /// A gate fits over one of `days`, chosen per gate from validation: separating
 /// K1 from P1 takes at least 183 days, so most gates need 210. A 210-day gate
 /// can publish the fit of its trailing 60 days first, as a provisional answer,
-/// when that fit's worst slack error was measured at or below
-/// `provisionalSlackMaxMinutes`.
+/// when that fit matched every slack and its worst slack error, rounded up to
+/// 5 minutes, was measured at or below `provisionalSlackMaxMinutes`.
 public enum ChsCurrentFit {
     public static let speedSeries = "wcsp1"
     public static let directionSeries = "wcdp1"
@@ -27,14 +27,15 @@ public enum ChsCurrentFit {
     /// floodDirection), positive on the flood. The projection is linear, so
     /// fitting it is equivalent to fitting both velocity components and
     /// projecting the result. A speed sample without a direction at the same
-    /// instant is dropped; when a direction is repeated, its first value
-    /// counts. Samples come back in the order of `speeds`.
+    /// instant is dropped, as is one whose speed or direction is not finite;
+    /// when a direction is repeated, its first value counts. Samples come back
+    /// in the order of `speeds`.
     public static func project(speeds: [HarmonicSample], directions: [HarmonicSample],
                                floodDirection: Double) -> [HarmonicSample] {
         var directionAt: [Date: Double] = [:]
         for d in directions where directionAt[d.time] == nil { directionAt[d.time] = d.value }
         return speeds.compactMap { s in
-            guard let direction = directionAt[s.time] else { return nil }
+            guard let direction = directionAt[s.time], direction.isFinite, s.value.isFinite else { return nil }
             return HarmonicSample(time: s.time, value: s.value * cos((direction - floodDirection) * .pi / 180))
         }
     }

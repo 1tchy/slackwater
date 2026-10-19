@@ -45,4 +45,14 @@ describe("projectChsCurrent", () => {
     expect(projected.map((s) => s.time)).toEqual(expected.map((s) => s.time));
     projected.forEach((s, i) => expect(s.value).toBeCloseTo(expected[i].value, 12));
   });
+
+  test("drops samples whose speed or direction is not a finite number", () => {
+    const t = (i: number) => new Date(Date.UTC(2026, 0, 1) + i * 900_000);
+    const speeds = [NaN, 2, null as unknown as number, 1].map((value, i) => ({
+      time: t(i),
+      value,
+    }));
+    const directions = [135, NaN, 135, 135].map((value, i) => ({ time: t(i), value }));
+    expect(projectChsCurrent(speeds, directions, 135)).toEqual([{ time: t(3), value: 1 }]);
+  });
 });

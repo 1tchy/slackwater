@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import SlackwaterKit
 
@@ -31,6 +32,15 @@ private func samples(_ rows: [Sample]) -> [HarmonicSample] {
     #expect(ChsCurrentFit.days == recipe.days)
     #expect(ChsCurrentFit.sampleMinutes == recipe.sampleMinutes)
     #expect(ChsCurrentFit.provisionalSlackMaxMinutes == recipe.provisionalSlackMaxMinutes)
+}
+
+@Test func chsCurrentFitDropsNonFiniteSamples() {
+    let t = { (i: Int) in Date(timeIntervalSince1970: 1_767_225_600 + Double(i) * 900) }
+    let speeds = [Double.nan, 2, 1].enumerated().map { HarmonicSample(time: t($0.offset), value: $0.element) }
+    let directions = [135, Double.nan, 135].enumerated().map { HarmonicSample(time: t($0.offset), value: $0.element) }
+    let projected = ChsCurrentFit.project(speeds: speeds, directions: directions, floodDirection: 135)
+    #expect(projected.map(\.time) == [t(2)])
+    #expect(projected.map(\.value) == [1])
 }
 
 @Test func chsCurrentFitProjectsOntoTheFloodAxis() throws {
