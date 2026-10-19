@@ -2,7 +2,7 @@
 
 This record supports `chsTideFit`, the CHS tide fit recipe every Slackwater client uses (`@slackwater/engine`, and `ChsTideFit` in Swift and Kotlin), and the app's [CHS data model](https://github.com/openwatersio/slackwater-ios/blob/main/docs/chs-data-model.md). Measurements below come from the September 20, 2026 window sweep and the October 18 national sample; they are evidence for that decision, not a claim about every future fit. `benchmarks/chs-fit.ts` scores the recipe against the bar set here every month.
 
-`chsTideFit.days` is 60. The fit window is the highest-leverage lever on first-run download time: wall clock is linear in request count, 1,058 of the 1,073 fittable CHS stations are tide ports, and the iOS app's `chunkPlan` 7-day grid turns 60 days into 10 IWLS requests per port against 6 for 35 days. At Victoria's 25 km tier that is 11 minutes against 7.
+`chsTideFit.days` is 60. The fit window is the highest-leverage lever on first-run download time: wall clock is linear in request count, 1,058 of the 1,073 fittable CHS stations are tide ports, and the 7-day `chunkPlan` grid in the [IWLS fetching contract](../iwls-fetch.md) turns 60 days into 9 or 10 IWLS requests per port against 5 or 6 for 35 days, depending on where the fit day falls in the epoch week. At Victoria's 25 km tier that is up to 11 minutes against 7.
 
 This pass measures whether a shorter window reproduces CHS's own published curve as faithfully as 60 days does, on the app's exact shipping path, and sets the bar before looking at any result.
 
@@ -153,7 +153,7 @@ These numbers were measured with slackwater-ios's `tools/FitValidation` as exten
 | Fail a height clause, mostly a mean-level offset |       14 |
 | Fail a height clause, curve shape                |       12 |
 
-67 days, the longest window the iOS app's `chunkPlan` delivers, passes 30. The ranking is the same.
+67 days, the longest window a 60-day `chunkPlan` delivers, passes 30. The ranking is the same.
 
 All 11 timing-only failures fail the worst-timing clause. Some also fail the median or leave an extreme unmatched. Five are Arctic and Gulf ports with a 22–70 cm range: Eureka, Kugluktuk, Jenny Lind Island, Cooks Harbour and East Margaree River. The other six are Victoria, Prideaux Haven, Grande-Entrée, Shoal Cove West, Middle Cove and Cape Kater. Their height clauses pass. This is the clause [60 days does not clear this bar either](#60-days-does-not-clear-this-bar-either) already reads as mis-specified.
 

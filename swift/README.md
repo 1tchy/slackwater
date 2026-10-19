@@ -4,7 +4,9 @@ The open, offline tide & current engine behind **Slackwater** — *Offline Tides
 
 Tide prediction is deterministic astronomy, not a live feed. Given a station's harmonic
 constituents you can compute heights and the high/low turns for any minute, years ahead,
-with **zero network**. This package is a pure-Swift harmonic engine that does exactly that.
+with **zero network**. The `SlackwaterKit` product is a pure-Swift harmonic engine that does exactly that.
+
+The separate [`SlackwaterIWLS`](Sources/SlackwaterIWLS) product fetches CHS inputs directly on a user's device. It follows the shared [fetching contract](../docs/iwls-fetch.md) and has no dependency on the prediction engine.
 
 **It's all open — the engine MIT, the app GPL v3.** If you sail somewhere our numbers are
 off, read the code, check it against your home waters, and send a fix.
