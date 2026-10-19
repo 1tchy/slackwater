@@ -272,6 +272,10 @@ As of Feb 2026:
 
 Slackwater reproduces high and low tide timing with **sub-minute accuracy** and tide heights with **millimeter-level accuracy** compared to NOAA's tide predictions. Validation is automated and enforced in CI to prevent regressions as the model evolves.
 
+### Fitted CHS tide ports
+
+Canadian Hydrographic Service ports have no redistributable constants, so clients fit them on device from CHS's own predictions with `chsTideFit`. `benchmarks/chs-fit.ts` scores that recipe monthly on 64 ports at held-out weeks 28 to 270 days out. On the first run, about half the ports met the [accuracy bar](docs/validation/chs-tides.md) at the first held-out week, and the median held-out RMSE was 4–8 cm. Most misses come from the seasonal mean level, which a 60-day fit cannot carry ([#428](https://github.com/openwatersio/slackwater/issues/428)).
+
 ## License
 
 The libraries in this repository (`slackwater`, `@slackwater/engine`, `@slackwater/cli`, `@slackwater/api`, and `@slackwater/react`) are [MIT](LICENSE) licensed, and so are SlackwaterKit ([swift/LICENSE](swift/LICENSE)), SlackwaterIWLS ([module license](swift/Sources/SlackwaterIWLS/LICENSE)) and the [Kotlin engine](kotlin). The [iOS app](https://github.com/openwatersio/slackwater-ios) is GPL-3.0. The [station database](https://github.com/openwatersio/slackwater-database) code is MIT, and its station data carries a license per station: CC BY 4.0 unless noted, NOAA stations in the public domain, and some stations CC BY-NC 4.0, marked `commercial_use: false`. Every station has an `attribution` string to display wherever you show its data.

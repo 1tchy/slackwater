@@ -122,6 +122,12 @@ This project uses [Changesets](https://github.com/changesets/changesets) for ver
 
 Release automation uses Changesets CLI v3 and `changesets/action` v2. Run `npm run test:release` to check versioning, lockfile updates, beta and stable tags, and sequential publishing without publishing to npm. Versioned prerelease changesets live in `.changeset/pre/`; pending changesets stay in `.changeset/` until the next version step.
 
+### Release Notes
+
+Each changeset summary becomes a line in the release notes, so write it for the people using Slackwater: say what changed for them, not how it was implemented, and keep to one change per changeset. Follow the org guidance on [release titles and notes](https://github.com/openwatersio/.github/blob/main/docs/agents/releases.md#release-notes).
+
+After the release workflow publishes, give the release for the umbrella `slackwater` package a headline that says what changed, in sentence case with no version and no closing period: `gh release edit slackwater@<version> --repo openwatersio/slackwater --title "<headline>"`. The [openwaters.io/updates](https://openwaters.io/updates/) page groups one publish run into one entry titled from that release.
+
 ### Import Conventions
 
 **Always use `.js` extensions** in TypeScript imports:
@@ -135,7 +141,7 @@ This is required for ESM compatibility (see `tsconfig.json` with `moduleResoluti
 
 ## Testing Patterns
 
-The Swift engine is in `swift/Sources/SlackwaterKit`; run `swift test -c release` for its golden and prediction tests. Harmonic fitting evaluates per-sample astronomy and uses Accelerate QR least squares on Apple platforms. `@slackwater/engine` exports the corresponding TypeScript `fit(samples, names)` using bounded-batch QR alongside prediction. Both consume `fixtures/harmonic-fit-parity.json` and `fixtures/harmonic-fit-invalid.json`; update and run both suites when changing their contract. Provider-specific bases, rounding, and held-out validation belong to consumers. `SlackwaterIWLS` is a separate MIT Swift product for device-side IWLS fetching, with no dependency on `SlackwaterKit`. Its parsing and fetching rules are maintained in [docs/iwls-fetch.md](docs/iwls-fetch.md) and checked against synthetic `fixtures/iwls-fetch.json`; run `swift test -c release --filter SlackwaterIWLSTests`. Keep networking out of the prediction engines and CHS predictions out of API/CLI serving paths.
+The Swift engine is in `swift/Sources/SlackwaterKit`; run `swift test -c release` for its golden and prediction tests. Harmonic fitting evaluates per-sample astronomy and uses Accelerate QR least squares on Apple platforms. `@slackwater/engine` exports the corresponding TypeScript `fit(samples, names)` using bounded-batch QR alongside prediction. Both consume `fixtures/harmonic-fit-parity.json` and `fixtures/harmonic-fit-invalid.json`; update and run both suites when changing their contract. Every client fits a CHS tide port with the same recipe, `chsTideFit` in TypeScript and `ChsTideFit` in Swift and Kotlin, all three checked against `fixtures/chs-tide-fit.json`. `benchmarks/chs-fit.ts` validates the recipe on held-out CHS predictions against the bar in [docs/validation/chs-tides.md](docs/validation/chs-tides.md). A change to the recipe lands here with a benchmark run, never in a client. `SlackwaterIWLS` is a separate MIT Swift product for device-side IWLS fetching, with no dependency on `SlackwaterKit`. Its parsing and fetching rules are maintained in [docs/iwls-fetch.md](docs/iwls-fetch.md) and checked against synthetic `fixtures/iwls-fetch.json`; run `swift test -c release --filter SlackwaterIWLSTests`. Keep networking out of the prediction engines and CHS predictions out of API/CLI serving paths.
 
 The Kotlin/JVM engine lives in `kotlin/`, targets JVM 8 bytecode with `java.time.Instant` (Android minSdk 26), and accepts constants directly. It uses IHO corrections and has no runtime I/O or station database. Run `cd kotlin && ./gradlew test jacocoTestReport jacocoTestCoverageVerification` and `./gradlew -p smoke run` with JDK 17. JaCoCo enforces 100% handwritten line coverage, excluding the generated catalog. `fixtures/generate/gen-catalog.mjs` emits both Swift JSON and Kotlin literals; `npm run fixtures:check` validates the generator and checks both outputs. Kotlin-only changes run the Kotlin CI lane without npm publication. Shared fixtures and engine changes select both Swift and Kotlin as well as TypeScript. Source consumer setup and limitations are in [kotlin/README.md](kotlin/README.md).
 
@@ -159,4 +165,4 @@ For background on tidal harmonic prediction concepts (constituents, node correct
 - Always add corresponding tests and verify with `npm run coverage`. **100% test coverage is required** for pull requests to be merged.
 - Update this CONTRIBUTING.md document with any relevant architectural notes or patterns related to the new feature.
 - Ensure the `README.md` files in the relevant packages are updated with usage instructions and examples for the new feature.
-- Use `npm run changeset` to create a changeset for the new feature, which will help with versioning and release notes when publishing.
+- Use `npm run changeset` to create a changeset for the new feature, which feeds versioning and the release notes (see [Release Notes](#release-notes)).

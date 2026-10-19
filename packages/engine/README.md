@@ -235,6 +235,10 @@ Both implementations consume the same noisy 60- and 210-day inputs, independent 
 
 Callers choose a resolvable basis and validate predictions on held-out observations. Training RMS is not a forecast accuracy guarantee. Not for navigation.
 
+### CHS tide ports
+
+`chsTideFit` is the recipe every Slackwater client uses to fit a Canadian Hydrographic Service tide port from IWLS `wlp` predictions: `chsTideFit.days` of samples on a `chsTideFit.sampleMinutes` grid, fitted with `fit(samples, chsTideFit.basis)`. Swift's and Kotlin's `ChsTideFit` carry the same values, checked against `fixtures/chs-tide-fit.json`. `benchmarks/chs-fit.ts` scores the recipe against CHS's own predictions on held-out weeks, and [CHS tide fit validation](../../docs/validation/chs-tides.md) records the bar and the results.
+
 ## Data definitions
 
 ### <a name="constituent-object"></a>Constituent definition
