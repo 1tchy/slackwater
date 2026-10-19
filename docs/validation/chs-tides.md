@@ -1,6 +1,6 @@
 # CHS tide fit window validation
 
-This record supports `chsTideFit`, the CHS tide fit recipe every Slackwater client uses (`@slackwater/engine`, and `ChsTideFit` in Swift and Kotlin), and the app's [CHS data model](https://github.com/openwatersio/slackwater-ios/blob/main/docs/chs-data-model.md). Measurements below come from the September 20, 2026 window sweep and the October 18 national sample; they are evidence for that decision, not a claim about every future fit. `benchmarks/chs-fit.ts` scores the recipe against the bar set here every month.
+This record supports `chsTideFit`, the CHS tide fit recipe every Slackwater client uses (`@slackwater/engine`, and `ChsTideFit` in Swift and Kotlin), and the app's [CHS data model](https://github.com/openwatersio/slackwater-ios/blob/main/docs/chs-data-model.md). Measurements below come from the September 20, 2026 window sweep, the October 18 national sample, and the October 19 engine benchmark run; they are evidence for that decision, not a claim about every future fit. `benchmarks/chs-fit.ts` scores the recipe against the bar set here every month.
 
 `chsTideFit.days` is 60. The fit window is the highest-leverage lever on first-run download time: wall clock is linear in request count, 1,058 of the 1,073 fittable CHS stations are tide ports, and the 7-day `chunkPlan` grid in the [IWLS fetching contract](../iwls-fetch.md) turns 60 days into 9 or 10 IWLS requests per port against 5 or 6 for 35 days, depending on where the fit day falls in the epoch week. At Victoria's 25 km tier that is up to 11 minutes against 7.
 
@@ -142,7 +142,7 @@ The sample is every 18th station of `chs-stations.json` in id order plus the eig
 
 These numbers were measured with slackwater-ios's `tools/FitValidation` as extended in openwatersio/slackwater-ios#739 (`--days 60,67`, and `--holdout` for the later weeks), fitting with `SlackwaterKit.fit` and this basis. Its `--js` mode refit with the frozen JavaScript oracle and matched the native fitter to the printed precision at 48, 60 and 67 days at Saint John and Vieux-Québec. The miss is not a porting artefact.
 
-`npm run benchmarks:chs-fit` measures the same thing from the engine: every Nth IWLS port serving `wlp` and `wlp-hilo` in code order, fitted with `chsTideFit` and scored at +28, +90, +180 and +270 days. Its fit ends at the start of the current month, so the monthly run moves through the seasons. It writes `benchmarks/chs-fit.csv`.
+`npm run benchmarks:chs-fit` measures the same thing from the engine: every Nth IWLS port serving `wlp` and `wlp-hilo` in code order, fitted with `chsTideFit` and scored at +28, +90, +180 and +270 days. It fetches its fit inputs through the [IWLS fetching contract](../iwls-fetch.md), so each port is fitted from the same at-least-60, under-67 days a device would fit, ending at the port's local midnight on the 1st of the current month. The monthly run moves through the seasons, and through the epoch grid's span of window lengths. It writes `benchmarks/chs-fit.csv`.
 
 ### Most of Canada does not clear the bar at 60 days
 
@@ -206,13 +206,13 @@ The in-sample residual splits them. CHS predictions are noise-free, so a large i
 
 ### The engine benchmark agrees
 
-The first `benchmarks/chs-fit.ts` run fitted 64 IWLS ports, every 17th in code order, with the TypeScript `fit` and `chsTideFit`, over the 60 days ending 2026-10-01. One port served too few samples to fit. The other 63 were scored at four holdouts:
+The `benchmarks/chs-fit.ts` run of 2026-10-19 fitted 64 IWLS ports, every 17th in code order, with the TypeScript `fit` and `chsTideFit`, from the samples the IWLS fetching contract delivers for a fit ending at each port's local midnight on 2026-10-01. On that date the epoch grid gives each port 63.1 to 63.3 days, the spread being the ports' UTC offsets; Cap-des-Rosiers (02327) served about two days fewer, the same gap a device would fit across. One port (03670) served too few samples to fit. The other 63 were scored at four holdouts:
 
 | Holdout | Pass | Fail on height | Height miss mostly bias | Fail on timing only | RMSE p50 | RMSE p90 |
 | ------- | ---: | -------------: | ----------------------: | ------------------: | -------: | -------: |
-| +28 d   |   36 |             18 |                      13 |                   9 |   5.6 cm |  16.4 cm |
-| +90 d   |   30 |             26 |                      14 |                   7 |   7.7 cm |  20.1 cm |
-| +180 d  |   32 |             15 |                       6 |                  16 |   4.5 cm |  13.2 cm |
-| +270 d  |   49 |              9 |                       5 |                   5 |   4.3 cm |  10.6 cm |
+| +28 d   |   35 |             18 |                      15 |                  10 |   6.0 cm |  15.7 cm |
+| +90 d   |   30 |             25 |                      16 |                   8 |   7.5 cm |  17.7 cm |
+| +180 d  |   39 |              9 |                       7 |                  15 |   4.8 cm |  10.7 cm |
+| +270 d  |   52 |              7 |                       5 |                   4 |   4.6 cm |   9.8 cm |
 
 "Mostly bias" means the RMSE falls under the bar once the mean signed error is removed. The sample and season differ from the slackwater-ios sample above, and the split is the same: about half the ports pass at the first held-out week, and the seasonal mean level carries most of the height misses. The benchmark's baseline expectations come from this run. They hold the recipe to its current performance, not to the bar.
