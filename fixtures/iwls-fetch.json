@@ -556,7 +556,7 @@
       "status": 429,
       "attempt": 1,
       "retryAfter": 1e30,
-      "delay": null
+      "delay": 600
     },
     {
       "status": 429,
@@ -574,7 +574,7 @@
       "status": 503,
       "attempt": 1,
       "retryAfter": 86400,
-      "delay": null
+      "delay": 600
     },
     {
       "status": 503,
