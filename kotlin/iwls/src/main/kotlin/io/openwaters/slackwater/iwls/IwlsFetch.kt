@@ -2,7 +2,14 @@ package io.openwaters.slackwater.iwls
 
 import java.time.Instant
 import java.time.ZoneId
+import java.util.Locale
+import kotlin.math.asin
+import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
+import kotlinx.serialization.json.*
 
 /** The rules of docs/iwls-fetch.md that need no network. */
 object IwlsFetch {
@@ -24,5 +31,49 @@ object IwlsFetch {
             t = next
         }
         return chunks.reversed()
+    }
+
+    const val RESOLVE_TOLERANCE_KM = 3.0
+
+    /** The nearest station serving `series`, by position; names and codes are display metadata. */
+    fun resolve(name: String, latitude: Double, longitude: Double, series: String, stations: List<IwlsStation>): IwlsStation {
+        var best: IwlsStation? = null
+        var bestKm = Double.POSITIVE_INFINITY
+        for (station in stations) {
+            if (series !in station.timeSeries) continue
+            val km = distanceKm(latitude, longitude, station.latitude, station.longitude)
+            // Strictly nearer, so ties keep list order.
+            if (km < bestKm) {
+                best = station
+                bestKm = km
+            }
+        }
+        val found = best ?: throw IwlsException.Permanent("no IWLS station serves $series")
+        if (bestKm > RESOLVE_TOLERANCE_KM) {
+            throw IwlsException.Permanent(
+                "$name: nearest $series station ${found.officialName} is ${String.format(Locale.ROOT, "%.1f", bestKm)} km away"
+            )
+        }
+        return found
+    }
+
+    fun decodeStations(json: String): List<IwlsStation> = Json.parseToJsonElement(json).jsonArray.map { element ->
+        val station = element.jsonObject
+        IwlsStation(
+            station.requireString("id"),
+            station.requireString("officialName"),
+            station.requireNumber("latitude"),
+            station.requireNumber("longitude"),
+            station.getValue("timeSeries").jsonArray.map { it.jsonObject.requireString("code") },
+        )
+    }
+
+    private fun distanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val p1 = Math.toRadians(lat1)
+        val p2 = Math.toRadians(lat2)
+        val dp = p2 - p1
+        val dl = Math.toRadians(lon2 - lon1)
+        val h = sin(dp / 2) * sin(dp / 2) + cos(p1) * cos(p2) * sin(dl / 2) * sin(dl / 2)
+        return 2 * 6371.0088 * asin(min(1.0, sqrt(h)))
     }
 }
