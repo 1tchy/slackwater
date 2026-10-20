@@ -1,7 +1,12 @@
 package io.openwaters.slackwater.iwls
 
+import java.io.EOFException
+import java.net.ProtocolException
+import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.URLEncoder
+import java.net.UnknownHostException
 import java.time.Duration
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -9,10 +14,13 @@ import java.time.ZoneId
 import java.time.format.DateTimeParseException
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+import javax.net.ssl.SSLException
 import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlinx.serialization.json.*
@@ -150,6 +158,47 @@ object IwlsFetch {
             else append(String.format(Locale.ROOT, "%%%02X", code))
         }
     }
+
+    const val MAX_ATTEMPTS = 4
+
+    /** The longest `Retry-After` the client waits, so one header cannot hold a queue for hours. */
+    const val MAX_RETRY_AFTER_SECONDS = 600.0
+
+    sealed interface Outcome {
+        data class Status(val code: Int) : Outcome
+        data class Failure(val error: Throwable) : Outcome
+    }
+
+    /** Seconds before another attempt, or null when the client should stop; `attempt` counts the one that just failed. */
+    fun retryDelaySeconds(outcome: Outcome, attempt: Int, retryAfter: Double? = null): Double? {
+        if (attempt >= MAX_ATTEMPTS) return null
+        val backoff = 2.0.pow(attempt)
+        val asked = retryAfter?.takeIf { it.isFinite() && it >= 0 }?.coerceAtMost(MAX_RETRY_AFTER_SECONDS) ?: 0.0
+        return when (outcome) {
+            is Outcome.Failure -> if (isTransient(outcome.error)) backoff else null
+            is Outcome.Status -> when {
+                outcome.code == 429 -> max(asked, 60.0)
+                outcome.code in 500..599 && outcome.code !in setOf(501, 505, 511) -> max(asked, backoff)
+                else -> null
+            }
+        }
+    }
+
+    fun terminalError(status: Int): IwlsException =
+        if (status in 400..499 && status != 429) IwlsException.Permanent("HTTP $status")
+        else IwlsException.Transient("HTTP $status")
+
+    /** Timeouts, unreachable or unknown hosts, lost links, and invalid responses; never TLS failures or cancellation. */
+    fun isTransient(error: Throwable): Boolean = when (error) {
+        is SSLException -> false
+        is SocketTimeoutException, is SocketException, is UnknownHostException, is ProtocolException, is EOFException -> true
+        else -> false
+    }
+
+    // Decimal seconds only: no surrounding spaces, no hex or binary literal, no HTTP date.
+    private val RETRY_AFTER = Regex("""[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?""")
+
+    fun parseRetryAfter(header: String?): Double? = header?.takeIf { RETRY_AFTER.matches(it) }?.toDouble()
 
     private fun distanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val p1 = Math.toRadians(lat1)
