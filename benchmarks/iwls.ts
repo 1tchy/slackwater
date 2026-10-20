@@ -193,7 +193,16 @@ const transientCodes = new Set([
   "UND_ERR_BODY_TIMEOUT",
 ]);
 
+/** A 200 with no body: the contract's empty response, transient as Swift's `zeroByteResource` is. */
+export class EmptyResponseError extends Error {
+  constructor() {
+    super("IWLS sent an empty response");
+    this.name = "EmptyResponseError";
+  }
+}
+
 export function isTransient(error: unknown): boolean {
+  if (error instanceof EmptyResponseError) return true;
   // The default fetch's per-attempt bound, Swift's `timedOut`.
   if (error instanceof DOMException && error.name === "TimeoutError") return true;
   const code = (error as { cause?: { code?: unknown } })?.cause?.code;
@@ -292,11 +301,16 @@ export function createClient(options: ClientOptions = {}) {
       let retryAfter: number | undefined;
       try {
         const res = await request(url, signal);
-        // Only a 200 supplies a body; decoding errors are not retried.
-        if (res.status === 200) return await res.json();
-        await res.body?.cancel();
-        outcome = { status: res.status };
-        retryAfter = parseRetryAfter(res.headers.get("Retry-After"));
+        // Only a 200 supplies a body; decoding errors are not retried, but an empty body is.
+        if (res.status === 200) {
+          const text = await res.text();
+          if (text !== "") return JSON.parse(text);
+          outcome = { error: new EmptyResponseError() };
+        } else {
+          await res.body?.cancel();
+          outcome = { status: res.status };
+          retryAfter = parseRetryAfter(res.headers.get("Retry-After"));
+        }
       } catch (error) {
         outcome = { error };
       }
@@ -360,6 +374,10 @@ export function parseEventDate(value: string): number | undefined {
 
 // One path component: `/`, `%`, `?` and `#` escaped, the other sub-delimiters kept, as Swift's client does.
 export function pathComponent(id: string): string {
+  // "." and ".." are dot segments: URL resolution removes them, escaped or not.
+  if (id === "" || id === "." || id === "..") {
+    throw new IwlsError("permanent", "invalid IWLS station id");
+  }
   return encodeURIComponent(id).replace(/%(24|26|2B|2C|3B|3D|3A|40)/gi, (m) =>
     decodeURIComponent(m),
   );

@@ -4,7 +4,7 @@ An offline tide and current engine for Kotlin/JVM and Android. Callers supply st
 
 ## Use from source
 
-Builds use JDK 17, Kotlin 2.2.0 and the checked-in Gradle 8.14.3 wrapper. The library targets JVM 8 bytecode and uses `java.time.Instant`; Android consumers require `minSdk = 26` because [Instant was added in API 26](https://developer.android.com/reference/java/time/Instant). Android device execution is pending consumer integration testing.
+Builds use JDK 17, the Kotlin plugin version pinned in [`build.gradle.kts`](build.gradle.kts) and the checked-in Gradle wrapper. The library targets JVM 8 bytecode and uses `java.time.Instant`; Android consumers require `minSdk = 26` because [Instant was added in API 26](https://developer.android.com/reference/java/time/Instant). Android device execution is pending consumer integration testing.
 
 This is a source distribution. The dependency below resolves through a composite build; it is not published to Maven Central. Check out the repository at a reviewed full commit SHA and keep that SHA in your application's dependency setup:
 

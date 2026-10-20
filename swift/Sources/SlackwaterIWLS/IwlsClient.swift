@@ -5,19 +5,51 @@ import Foundation
 import FoundationNetworking
 #endif
 
+/// Admits request starts one at a time, at least the interval apart. The gap runs from when the
+/// previous request was actually admitted, so a stalled executor cannot release a burst, and a
+/// waiter cancelled before its turn takes no slot.
 public actor IwlsPacer {
     private let interval: Duration
     // Monotonic, so a wall-clock step back cannot stall every client in the process.
     private var last: ContinuousClock.Instant?
+    private var admitting = false
+    private var queue: [(id: UInt64, turn: CheckedContinuation<Void, any Error>)] = []
+    private var nextID: UInt64 = 0
 
     public init(interval: TimeInterval = 2.5) { self.interval = .seconds(interval) }
 
     public func wait() async throws {
         try Task.checkCancellation()
-        let now = ContinuousClock.now
-        let slot = last.map { max(now, $0 + interval) } ?? now
-        last = slot
-        if slot > now { try await Task.sleep(until: slot, clock: .continuous) }
+        if admitting { try await takeTurn() } else { admitting = true }
+        defer { passTurn() }
+        if let last { try await Task.sleep(until: last + interval, clock: .continuous) }
+        last = .now
+    }
+
+    private func takeTurn() async throws {
+        let id = nextID
+        nextID += 1
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (turn: CheckedContinuation<Void, any Error>) in
+                enqueue(id, turn)
+            }
+        } onCancel: {
+            Task { await self.leave(id) }
+        }
+    }
+
+    private func enqueue(_ id: UInt64, _ turn: CheckedContinuation<Void, any Error>) {
+        if Task.isCancelled { turn.resume(throwing: CancellationError()) } else { queue.append((id: id, turn: turn)) }
+    }
+
+    // A queued waiter that is cancelled leaves at once, without waiting for its turn.
+    private func leave(_ id: UInt64) {
+        guard let index = queue.firstIndex(where: { $0.id == id }) else { return }
+        queue.remove(at: index).turn.resume(throwing: CancellationError())
+    }
+
+    private func passTurn() {
+        if queue.isEmpty { admitting = false } else { queue.removeFirst().turn.resume() }
     }
 }
 
@@ -69,13 +101,7 @@ public struct IwlsClient: Sendable {
     }
 
     public func metadata(stationID: String) async throws -> Metadata {
-        // Reuse the series URL's path-component escaping for resolved station IDs.
-        let chunk = ChsChunk(start: Date(timeIntervalSince1970: 0), end: Date(timeIntervalSince1970: 0))
-        let dataURL = try IwlsFetch.dataURL("wlp", stationID: stationID, chunk: chunk)
-        var url = URLComponents(url: dataURL, resolvingAgainstBaseURL: false)!
-        url.percentEncodedPath = String(url.percentEncodedPath.dropLast(4)) + "metadata"
-        url.queryItems = nil
-        return try JSONDecoder().decode(Metadata.self, from: await get(url.url!))
+        try JSONDecoder().decode(Metadata.self, from: await get(IwlsFetch.metadataURL(stationID: stationID)))
     }
 
     public func series(_ code: String, stationID: String, chunk: ChsChunk) async throws -> [ChsSample] {
@@ -104,9 +130,15 @@ public struct IwlsClient: Sendable {
             case .success(let (data, response)):
                 let http = response as? HTTPURLResponse
                 let status = http?.statusCode ?? 0
-                if status == 200 { return data }
-                outcome = .success(status)
-                retryAfter = http?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
+                if status == 200, !data.isEmpty { return data }
+                if status == 200 {
+                    // An empty 200 is the contract's empty response: transient, like zeroByteResource.
+                    outcome = .failure(URLError(.zeroByteResource))
+                    retryAfter = nil
+                } else {
+                    outcome = .success(status)
+                    retryAfter = http?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
+                }
             case .failure(let error):
                 outcome = .failure(error)
                 retryAfter = nil

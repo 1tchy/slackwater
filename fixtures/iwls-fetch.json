@@ -607,5 +607,15 @@
       "retryAfter": -5,
       "delay": 2
     }
+  ],
+  "pathComponents": [
+    { "id": "resolved-id", "encoded": "resolved-id" },
+    { "id": "id/path?bad=2#x%", "encoded": "id%2Fpath%3Fbad=2%23x%25" },
+    { "id": "a:b@c!$&'()*+,;=-._~", "encoded": "a:b@c!$&'()*+,;=-._~" },
+    { "id": "a.b", "encoded": "a.b" },
+    { "id": ".", "encoded": null },
+    { "id": "..", "encoded": null },
+    { "id": "", "encoded": null },
+    { "id": "ét e", "encoded": "%C3%A9t%20e" }
   ]
 }

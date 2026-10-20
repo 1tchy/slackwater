@@ -22,6 +22,20 @@ class RequestTest {
         assertEquals(row.getValue("query").jsonObject.mapValues { it.value.jsonPrimitive.content }, url.queryMap())
     }
 
+    @Test fun encodesTheResolvedIdAsOnePathComponent() {
+        for (row in fixture().array("pathComponents").map { it.jsonObject }) {
+            val id = row.string("id")
+            val encoded = (row["encoded"] as? JsonPrimitive)?.contentOrNull
+            if (encoded == null) {
+                assertFailsWith<IwlsException.Permanent>(id) { IwlsFetch.dataUrl("wlp", id, chunk) }
+                assertFailsWith<IwlsException.Permanent>(id) { IwlsFetch.metadataUrl(id) }
+            } else {
+                assertEquals("/api/v1/stations/$encoded/data", IwlsFetch.dataUrl("wlp", id, chunk).path, id)
+                assertEquals("/api/v1/stations/$encoded/metadata", IwlsFetch.metadataUrl(id).path, id)
+            }
+        }
+    }
+
     @Test fun refusesEventSeriesAndWindowsLongerThanAWeek() {
         for (code in listOf("wlp-hilo", "wcp1-events", "")) {
             assertFailsWith<IwlsException.Permanent>(code) { IwlsFetch.dataUrl(code, "id", chunk) }

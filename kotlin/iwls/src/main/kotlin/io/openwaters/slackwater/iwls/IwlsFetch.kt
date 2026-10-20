@@ -148,11 +148,13 @@ object IwlsFetch {
 
     private fun wholeSeconds(instant: Instant): String = instant.truncatedTo(ChronoUnit.SECONDS).toString()
 
-    // One path component: `/`, `%`, `?` and `#` escaped and the other sub-delimiters kept, as
-    // Swift's `urlPathAllowed` minus those four.
+    // One path component: RFC 3986's path characters kept, less `/`, the same set Swift spells
+    // out in `pathKept`. Everything else, including `%`, `?` and `#`, is percent-encoded.
     private const val PATH_KEPT = "-._~!\$&'()*+,;=:@"
 
     private fun pathComponent(id: String): String = buildString {
+        // "." and ".." are dot segments: URL resolution removes them, escaped or not.
+        if (id == "." || id == "..") throw IwlsException.Permanent("invalid IWLS station id")
         for (byte in id.toByteArray(Charsets.UTF_8)) {
             val code = byte.toInt() and 0xff
             val char = code.toChar()
