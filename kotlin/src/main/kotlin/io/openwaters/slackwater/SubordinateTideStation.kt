@@ -41,9 +41,13 @@ class SubordinateTideStation(
     private fun curve(from: Instant, to: Instant, step: Double): List<CurvePoint> {
         val timeline = makeTimeline(from, to, step)
         if (timeline.items.isEmpty()) return emptyList()
-        val knots = curveKnots(timeline.items.first(), timeline.items.last(), 15 * 3600.0, reference.phaseSearchLimitSeconds) { from, to ->
+        val first = timeline.items.first()
+        val last = timeline.items.last()
+        val knots = curveKnots(first, last, 15 * 3600.0, reference.phaseSearchLimitSeconds) { from, to ->
+            // Knots have to surround the window. As in Swift, a tide whose turns are all below the
+            // threshold, or kept farther apart than the pad, gets them from its raw turning points.
             var events = extremes(from, to)
-            if (events.size < 2) events = extremes(from, to, 0.0)
+            if (events.size < 2 || events.first().time > first || events.last().time < last) events = extremes(from, to, 0.0)
             events.map { it.time to it.heightMetres }
         }
         return halfCosineCurve(knots, timeline.items)

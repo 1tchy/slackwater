@@ -33,7 +33,7 @@ class CurrentStation(
         require(last - first < Int.MAX_VALUE) { "Event window exceeds indexed range" }
         val bracket = harmonic.eventBracketHours
         if (!bracket.isFinite()) return emptyList()
-        checkEventCapacity((last - first + 1) * (80 + 2 * ceil(25 / bracket) * bracket), bracket)
+        checkEventCapacity((last - first + 1 + 2 * (MAX_CONTEXT_DAYS + 1)) * 40.0, bracket)
         val results = mutableListOf<CurrentEvent>()
         for (day in first..last) {
             val begin = instant(day * 86400.0)
@@ -47,7 +47,8 @@ class CurrentStation(
         val start = instant(floor(epochSeconds(from) / 600) * 600)
         val endHour = (ceil(epochSeconds(to) / 600) * 600 - epochSeconds(start)) / 3600
         fun provider() = ParamProvider(harmonic.constituents, offsetKnots, start, endHour)
-        val maxima = findExtremes(0.0, endHour, provider(), 0.01).map {
+        val end = shifted(start, endHour * 3600)
+        val maxima = findExtremes(start, end, 0.01) { day -> ParamProvider(harmonic.constituents, offsetKnots, day, 24.0) }.map {
             val flood = it.level >= 0
             CurrentEvent(it.time, it.level, if (flood) CurrentEventKind.MAX_FLOOD else CurrentEventKind.MAX_EBB,
                 if (flood) floodDirectionDegrees else ebbDirectionDegrees)
