@@ -127,6 +127,10 @@ public enum IwlsFetch {
         try stationURL(stationID, "metadata").url!
     }
 
+    // RFC 3986 pchar, spelled out: Linux Foundation's urlPathAllowed escapes ";".
+    private static let pathKept = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~!$&'()*+,;=:@")
+
     private static func stationURL(_ stationID: String, _ resource: String) throws -> URLComponents {
         // "." and ".." are dot segments: URL resolution removes them, escaped or not.
         guard !stationID.isEmpty, stationID != ".", stationID != ".." else {
@@ -134,9 +138,7 @@ public enum IwlsFetch {
         }
         var url = URLComponents(string: IwlsClient.base)!
         // Encode the ID as one path component, even when the caller supplies reserved characters.
-        var allowed = CharacterSet.urlPathAllowed
-        allowed.remove(charactersIn: "/%?#")
-        let id = stationID.addingPercentEncoding(withAllowedCharacters: allowed)!
+        let id = stationID.addingPercentEncoding(withAllowedCharacters: pathKept)!
         url.percentEncodedPath += "/stations/\(id)/\(resource)"
         return url
     }
