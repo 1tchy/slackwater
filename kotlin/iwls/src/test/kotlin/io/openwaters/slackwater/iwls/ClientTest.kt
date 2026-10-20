@@ -114,6 +114,13 @@ class ClientTest {
         assertEquals(1, server.urls.size)
     }
 
+    @Test fun aTransportsCancellationPropagatesWithoutRetry() = runTest {
+        val server = FakeServer(kotlinx.coroutines.CancellationException("stopped"))
+        assertFailsWith<kotlinx.coroutines.CancellationException> { server.client().stationList() }
+        assertEquals(1, server.urls.size)
+        assertEquals(emptyList(), server.delays)
+    }
+
     @Test fun defaultClientsShareOnePacer() {
         assertSame(IwlsClient.sharedPacer, IwlsClient().pacer)
         assertSame(IwlsClient.sharedPacer, IwlsClient(FakeServer().transport).pacer)
