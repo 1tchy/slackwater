@@ -24,6 +24,7 @@ private struct Fixture: Decodable {
         let path: String; let query: [String: String]
     }
     struct Retry: Decodable { let status: Int; let attempt: Int; let retryAfter: Double?; let delay: Double? }
+    struct PathComponent: Decodable { let id: String; let encoded: String? }
     let version: Int
     let resolution: [Resolution]
     let midnights: [Midnight]
@@ -31,6 +32,7 @@ private struct Fixture: Decodable {
     let decoding: [Decoding]
     let request: Request
     let retries: [Retry]
+    let pathComponents: [PathComponent]
     let boundaryResponses: [[IwlsSample]]
     let boundaryExpected: [ChsSample]
 }
@@ -107,6 +109,25 @@ private func fixture() throws -> Fixture {
     let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
     #expect(components.path == row.path)
     #expect(Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") }) == row.query)
+}
+
+@Test func encodesTheResolvedIDAsOnePathComponent() throws {
+    let chunk = ChsChunk(start: Date(timeIntervalSince1970: 0), end: Date(timeIntervalSince1970: 900))
+    for row in try fixture().pathComponents {
+        guard let encoded = row.encoded else {
+            // Dot segments are removed by URL resolution, escaped or not, so they are refused.
+            #expect(throws: IwlsError.self, "\(row.id)") { try IwlsFetch.dataURL("wlp", stationID: row.id, chunk: chunk) }
+            #expect(throws: IwlsError.self, "\(row.id)") { try IwlsFetch.metadataURL(stationID: row.id) }
+            continue
+        }
+        let url = try IwlsFetch.dataURL("wlp", stationID: row.id, chunk: chunk)
+        let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        #expect(components.percentEncodedPath == "/api/v1/stations/\(encoded)/data", "\(row.id)")
+        let metadata = try #require(URLComponents(url: try IwlsFetch.metadataURL(stationID: row.id),
+                                                  resolvingAgainstBaseURL: false))
+        #expect(metadata.percentEncodedPath == "/api/v1/stations/\(encoded)/metadata", "\(row.id)")
+        #expect(metadata.queryItems == nil, "\(row.id)")
+    }
 }
 
 @Test func retriesObeyTheSharedContract() throws {

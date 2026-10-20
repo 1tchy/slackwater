@@ -107,17 +107,12 @@ public enum IwlsFetch {
 
     public static func dataURL(_ code: String, stationID: String, chunk: ChsChunk) throws -> URL {
         // Only the fit series: the 15-minute grid filter would silently drop event series like wlp-hilo.
-        guard !stationID.isEmpty, fitSeries.contains(code),
+        guard fitSeries.contains(code),
               chunk.start.timeIntervalSince1970.isFinite, chunk.end.timeIntervalSince1970.isFinite,
               chunk.end >= chunk.start, chunk.end.timeIntervalSince(chunk.start) <= 7 * 86400 else {
             throw IwlsError.permanent("invalid IWLS series request")
         }
-        var url = URLComponents(string: IwlsClient.base)!
-        // Encode the ID as one path component, even when the caller supplies reserved characters.
-        var allowed = CharacterSet.urlPathAllowed
-        allowed.remove(charactersIn: "/%?#")
-        let id = stationID.addingPercentEncoding(withAllowedCharacters: allowed)!
-        url.percentEncodedPath += "/stations/\(id)/data"
+        var url = try stationURL(stationID, "data")
         let iso = ISO8601DateFormatter()
         url.queryItems = [
             URLQueryItem(name: "time-series-code", value: code),
@@ -126,6 +121,24 @@ public enum IwlsFetch {
             URLQueryItem(name: "resolution", value: "FIFTEEN_MINUTES")
         ]
         return url.url!
+    }
+
+    public static func metadataURL(stationID: String) throws -> URL {
+        try stationURL(stationID, "metadata").url!
+    }
+
+    private static func stationURL(_ stationID: String, _ resource: String) throws -> URLComponents {
+        // "." and ".." are dot segments: URL resolution removes them, escaped or not.
+        guard !stationID.isEmpty, stationID != ".", stationID != ".." else {
+            throw IwlsError.permanent("invalid IWLS station id")
+        }
+        var url = URLComponents(string: IwlsClient.base)!
+        // Encode the ID as one path component, even when the caller supplies reserved characters.
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "/%?#")
+        let id = stationID.addingPercentEncoding(withAllowedCharacters: allowed)!
+        url.percentEncodedPath += "/stations/\(id)/\(resource)"
+        return url
     }
 }
 

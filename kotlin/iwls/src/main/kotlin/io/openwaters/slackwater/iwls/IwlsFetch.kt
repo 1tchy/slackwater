@@ -153,6 +153,8 @@ object IwlsFetch {
     private const val PATH_KEPT = "-._~!\$&'()*+,;=:@"
 
     private fun pathComponent(id: String): String = buildString {
+        // "." and ".." are dot segments: URL resolution removes them, escaped or not.
+        if (id == "." || id == "..") throw IwlsException.Permanent("invalid IWLS station id")
         for (byte in id.toByteArray(Charsets.UTF_8)) {
             val code = byte.toInt() and 0xff
             val char = code.toChar()

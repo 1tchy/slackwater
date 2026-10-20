@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   IwlsError,
@@ -13,6 +13,7 @@ import {
   localMidnight,
   onGrid,
   pacer,
+  pathComponent,
   resolve,
   retryDelay,
   terminalError,
@@ -95,6 +96,21 @@ describe("the shared IWLS fetching contract", () => {
     expect(Object.fromEntries(url.searchParams)).toEqual(row.query);
   });
 
+  test("encodes the resolved id as one path component", () => {
+    for (const row of fixture.pathComponents) {
+      const url = () => dataURL("wlp", row.id, { start: 0, end: 900_000 });
+      // The metadata URL takes the bare component, without dataURL's own checks.
+      const component = () => pathComponent(row.id);
+      if (row.encoded === null) {
+        expect(url, row.id).toThrow(IwlsError);
+        expect(component, row.id).toThrow(IwlsError);
+      } else {
+        expect(url().pathname, row.id).toBe(`/api/v1/stations/${row.encoded}/data`);
+        expect(component(), row.id).toBe(row.encoded);
+      }
+    }
+  });
+
   test("refuses event series and windows longer than a week", () => {
     const chunk = { start: 0, end: 900_000 };
     for (const code of ["wlp-hilo", "wcp1-events", ""]) {
@@ -148,6 +164,28 @@ describe("the shared IWLS fetching contract", () => {
   });
 });
 
+describe("the redistribution boundary", () => {
+  // CHS's terms forbid redistributing its predictions, so nothing that serves predictions (the
+  // API, the CLI, the npm packages) may reach an IWLS client, directly or through a benchmark.
+  test("no npm package reaches an IWLS client", () => {
+    const root = join(import.meta.dirname, "..");
+    const sources = readdirSync(join(root, "packages"), { recursive: true, encoding: "utf-8" })
+      .filter((path) => !/(^|\/)(node_modules|dist)\//.test(path))
+      .filter((path) => /\.[cm]?[jt]sx?$/.test(path));
+    // A scan that matched nothing would pass vacuously.
+    expect(sources).toContain("cli/bin/slackwater.js");
+    const offenders = sources.filter((path) => {
+      const source = readFileSync(join(root, "packages", path), "utf-8");
+      return (
+        /(from|import|require)\s*\(?\s*["'][^"']*(benchmarks\/|\/iwls(\.[cm]?[jt]s)?["'])/.test(
+          source,
+        ) || source.includes("api-iwls.dfo-mpo")
+      );
+    });
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe("the client", () => {
   test("waits out rate limits and server errors, then decodes grid samples", async () => {
     const server = fakeServer([429, 503, 200], {
@@ -161,6 +199,21 @@ describe("the client", () => {
     expect(samples).toEqual<Sample[]>([{ t: 0, v: 2 }]);
     expect(server.delays).toEqual([90, 90]);
     expect(new Set(server.urls).size).toBe(1);
+  });
+
+  test("retries an empty response", async () => {
+    // A 200 with no body is the contract's empty response, transient as Swift's zeroByteResource is.
+    const delays: number[] = [];
+    let requests = 0;
+    const client = createClient({
+      pacer: new Pacer(0),
+      sleep: async (seconds) => {
+        delays.push(seconds);
+      },
+      fetch: async () => new Response(++requests < 3 ? "" : "[]"),
+    });
+    expect(await client.stationList()).toEqual([]);
+    expect(delays).toEqual([2, 4]);
   });
 
   test("stops after four attempts with a transient error", async () => {

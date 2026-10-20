@@ -66,6 +66,16 @@ private actor Server {
     #expect(Set(urls).count == 1)
 }
 
+@Test func clientRetriesAnEmptyResponse() async throws {
+    // A 200 with no body is the contract's empty response, retried as zeroByteResource is.
+    let server = Server(Array(repeating: .success(200), count: 4), body: "")
+    let client = await server.client()
+    await #expect(throws: URLError.self) { try await client.stationList() }
+    let (urls, delays, _) = await server.snapshot()
+    #expect(urls.count == 4)
+    #expect(delays == [2, 4, 8])
+}
+
 @Test func clientStopsAtFourAttempts() async throws {
     let server = Server(Array(repeating: .success(500), count: 4))
     let client = await server.client()
@@ -114,6 +124,36 @@ private actor Server {
     #expect(axis.ebbDirection == 225)
     let (urls, _, _) = await metadata.snapshot()
     #expect(urls.first?.path == "/api/v1/stations/id/metadata")
+}
+
+@Test func aCancelledWaiterGivesUpItsSlot() async throws {
+    let pacer = IwlsPacer(interval: 0.5)
+    let began = ContinuousClock.now
+    try await pacer.wait()
+    let cancelled = Task { try await pacer.wait() }
+    try await Task.sleep(for: .milliseconds(50))
+    cancelled.cancel()
+    _ = await cancelled.result
+    try await pacer.wait()
+    // A held slot would put this start at 1,000 ms.
+    let elapsed = ContinuousClock.now - began
+    #expect(elapsed >= .milliseconds(499))
+    #expect(elapsed < .milliseconds(800), "\(elapsed)")
+}
+
+@Test func aQueuedWaiterCancelsWithoutWaitingItsTurn() async throws {
+    let pacer = IwlsPacer(interval: 0.5)
+    try await pacer.wait()
+    let ahead = Task { try await pacer.wait() }
+    try await Task.sleep(for: .milliseconds(20))
+    let queued = Task { try await pacer.wait() }
+    try await Task.sleep(for: .milliseconds(50))
+    let cancelledAt = ContinuousClock.now
+    queued.cancel()
+    let outcome = await queued.result
+    #expect(ContinuousClock.now - cancelledAt < .milliseconds(250))
+    #expect(throws: CancellationError.self) { try outcome.get() }
+    try await ahead.value
 }
 
 @Test func sharedPacerSpacesConcurrentReservations() async throws {
