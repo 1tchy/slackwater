@@ -12,15 +12,15 @@ The predicted height is a sum of cosines, h(t) = Σ A·cos(ω·t + φ), so its f
 
 The sign test only sees an odd number of roots in a bracket. Two roots inside one bracket, such as a short stand on a rising tide, are both missed, and three are reported as one. The code comment that says h' has at most one zero crossing per quarter period is wrong, and [#362](https://github.com/openwatersio/slackwater/issues/362) tracks it. A turn missed this way is narrower than a bracket, so it tends to be shallow, but nothing guarantees it would fall below the filter threshold.
 
-Roots that land exactly on a bracket boundary or on midnight are not guaranteed to be reported ([CONTRACT.md](../../../docs/CONTRACT.md)). Day d keeps only roots before 24 h, and day d + 1 opens on h′(0), so a root at exactly midnight is reported by neither.
+Roots that land exactly on a bracket boundary are not guaranteed to be reported ([CONTRACT.md](../../../docs/CONTRACT.md)), because the sign test needs h′ to be non-zero at both ends.
 
 ## Node corrections and the 24-hour refresh
 
 Node factors (f and u) change slowly over the 18.6-year nodal cycle. Each day's search takes its own parameters, anchored at its midnight, with node factors evaluated at its noon and the equilibrium argument V0 from its midnight: `paramsFrom` in `prediction.ts` and `currents.ts`, and a `ParamProvider` per day in Swift and Kotlin. One set holds for the whole day.
 
-Fresh parameters take effect at midnight, where one day's last bracket ends with the outgoing parameters and the next day's first bracket starts with the incoming ones. Near a flat turn, where h' stays close to zero for a while, the small change in parameters can move a root across midnight. If the incoming parameters put it earlier, before midnight while the outgoing ones put it after, neither day sees a sign change and the turn is missed. If they put it later, both days report it, seconds apart, and the filter keeps one copy (see below). It cannot restore a turn that was never found. [#364](https://github.com/openwatersio/slackwater/issues/364) tracks the fix.
+Fresh parameters take effect at midnight, and the small change in them can move a root across it. If each day evaluated h′ at midnight with its own parameters, a turn the incoming parameters put before midnight and the outgoing ones after it would change sign in neither day and be lost. At Cambridge, MD (noaa/8571892) that dropped the low of 26 July 2026, and with it the high before, whose next turn was then a higher high. A turn put the other way round would be found by both days. So each day's first bracket opens on the previous day's h′ at midnight instead of its own, and the days read as one sequence of h′ samples: a sign change between the two days' parameters is a turn at midnight, and a turn the previous day already found is not found again. `fixtures/extremes-midnight.json` holds the Cambridge case for all three engines.
 
-In Swift, `ranges()` in `Ranking.swift` collapses a same-kind run to its true extreme. That covers these misses and the reordering that unequal subordinate time offsets can cause.
+In Swift, `ranges()` in `Ranking.swift` collapses a same-kind run to its true extreme, which covers the reordering that unequal subordinate time offsets can cause.
 
 ## Removing spurious extremes
 
@@ -36,7 +36,7 @@ The pair rule is what NOAA's tabulation rule describes (see below). Over 19 year
 
 Removing a low together with its high keeps highs and lows alternating. A small stand on a falling tide produces a low and a high a few millimetres apart. Removing only the low would leave the high stranded between the real high and the next low, often near mid-tide, where nothing removes it, and the list would show two highs in a row ([#357](https://github.com/openwatersio/slackwater/issues/357)). Persistence removes the stand's low and high together, because neither clears the threshold against a turn of its own kind. A sub-threshold run keeps its true extreme.
 
-Of a turn the root finder counted twice, one copy survives: an equal turn counts as higher on its left only. The same rule would drop the later of two separate extremes at exactly the same level, which needs bit-identical heights.
+Of two neighbouring turns at exactly the same level, as in a list given to `filterExtremes` with a turn repeated, one survives: an equal turn counts as higher on its left only. The same rule would drop the later of two separate extremes at exactly the same level, which needs bit-identical heights.
 
 ### Deciding from each extreme's own neighbourhood
 
@@ -175,7 +175,7 @@ Krimpen's (M4 + MS4) / M2 is about 0.44, well past Doodson's quarter, so double 
 
 ## Swift parity
 
-`swift/Sources/SlackwaterKit/Extremes.swift` and `kotlin/src/main/kotlin/io/openwaters/slackwater/Extremes.kt` port `findExtremes`, `filterExtremes` and the persistence rule, and their `ParamProvider` follows `paramsFrom`. The parity gate is `fixtures/extremes-victoria.json`, generated from the TypeScript engine by `fixtures/generate/gen-golden.mjs`. The Swift and Kotlin tests must match it exactly in count and kind, within 60 seconds in time, and within 0.02 m in height ([CONTRACT.md](../../../docs/CONTRACT.md)). A change to one port goes in all three, and `npm run fixtures:check`, `swift test -c release` and the Kotlin lane must pass. All three test that extremes alternate over 19 years of a mixed tide and that overlapping windows report the same extremes, at Victoria and at a gauge whose every turn is a few millimetres.
+`swift/Sources/SlackwaterKit/Extremes.swift` and `kotlin/src/main/kotlin/io/openwaters/slackwater/Extremes.kt` port `findExtremes`, `filterExtremes` and the persistence rule, and their `ParamProvider` follows `paramsFrom`. The parity gates are `fixtures/extremes-victoria.json` and `fixtures/extremes-midnight.json`, generated from the TypeScript engine by `fixtures/generate/gen-golden.mjs`. The Swift and Kotlin tests must match it exactly in count and kind, within 60 seconds in time, and within 0.02 m in height ([CONTRACT.md](../../../docs/CONTRACT.md)). A change to one port goes in all three, and `npm run fixtures:check`, `swift test -c release` and the Kotlin lane must pass. All three test that extremes alternate over 19 years of a mixed tide and that overlapping windows report the same extremes, at Victoria and at a gauge whose every turn is a few millimetres.
 
 ## Open questions
 
@@ -183,4 +183,4 @@ NOAA's tables keep turns smaller than 1 cm, and micro-tidal stations show genuin
 
 NOAA's subordinate tables for Galveston keep the later high of a flat double high, while the reference curve says the earlier one is higher. The engine follows the curve. Copying NOAA's choice for subordinates would win back those matches, but the engine would then report a lower high than its own curve predicts.
 
-Turns missed at a midnight parameter refresh ([#364](https://github.com/openwatersio/slackwater/issues/364)) or inside one bracket ([#362](https://github.com/openwatersio/slackwater/issues/362)) are lost from every window alike. Doubled turns are filtered.
+Turns missed inside one bracket ([#362](https://github.com/openwatersio/slackwater/issues/362)) are lost from every window alike.

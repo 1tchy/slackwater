@@ -150,6 +150,23 @@ func extremesNearADoubleHighMatchALongerRun(start: String, end: String) {
     #expect(got.map(\.high) == [false, true, false])
 }
 
+/// Cambridge, MD puts the low of 26 July 2026 on 00:00 UTC, a second apart under each
+/// day's parameters: it is found once, and the high before it is kept.
+@Test func aTurnOnUtcMidnightIsFoundOnce() throws {
+    let pred = try loadFixture("extremes-midnight", as: PredictionFixtureRef.self)
+    let fixture = try loadFixture("extremes-midnight", as: ExtremesFixture.self)
+    let station = Station(constituents: pred.constituents.map {
+        HarmonicConstituent(name: $0.name, amplitude: $0.amplitude, phase: $0.phase)
+    })
+    let got = station.extremes(from: parseISO(fixture.start), to: parseISO(fixture.end))
+    #expect(got.count == fixture.extremes.count, "extreme count: got \(got.count), want \(fixture.extremes.count)")
+    for (g, e) in zip(got, fixture.extremes) {
+        #expect((g.kind == .high ? "high" : "low") == e.kind, "kind at \(e.time)")
+        #expect(abs(g.time.timeIntervalSince1970 - parseISO(e.time).timeIntervalSince1970) < 60, "time at \(e.time)")
+        #expect(abs(g.height - e.height) < 0.02, "height at \(e.time)")
+    }
+}
+
 // Minimal decode of the prediction fixture's constituent list, reused here.
 struct PredictionFixtureRef: Decodable {
     let constituents: [C]
