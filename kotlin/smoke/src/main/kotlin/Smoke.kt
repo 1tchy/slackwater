@@ -1,4 +1,5 @@
 import io.openwaters.slackwater.*
+import io.openwaters.slackwater.iwls.IwlsClient
 import io.openwaters.slackwater.iwls.IwlsFetch
 import java.time.Instant
 import java.time.ZoneId
@@ -28,5 +29,8 @@ fun main() {
     check(constituentAstronomy("M2", from) != null)
     val fitEnd = IwlsFetch.localMidnight(from, ZoneId.of("America/Vancouver"))
     check(IwlsFetch.chunkPlan(60.0, fitEnd).size in 9..10)
+    // A client loads the coroutines runtime and decoding loads serialization; neither sends anything.
+    check(IwlsClient().toString().isNotEmpty())
+    check(IwlsFetch.decode("""[{"eventDate":"2026-06-01T00:00:00Z","value":1.5}]""").single().value == 1.5)
     println("Public API consumer passed")
 }

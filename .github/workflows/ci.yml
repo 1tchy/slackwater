@@ -41,12 +41,12 @@ jobs:
           else
             echo 'typescript=false' >> "$GITHUB_OUTPUT"
           fi
-          if printf '%s\n' "$changed" | grep -qE '^(kotlin/|fixtures/|packages/engine/|package\.json$|\.github/workflows/)'; then
+          if printf '%s\n' "$changed" | grep -qE '^(kotlin/|fixtures/|docs/iwls-fetch\.md$|packages/engine/|package\.json$|\.github/workflows/)'; then
             echo 'kotlin=true' >> "$GITHUB_OUTPUT"
           else
             echo 'kotlin=false' >> "$GITHUB_OUTPUT"
           fi
-          if printf '%s\n' "$changed" | grep -qE '^(swift/|fixtures/|packages/engine/|Package\.swift$|\.github/workflows/)'; then
+          if printf '%s\n' "$changed" | grep -qE '^(swift/|fixtures/|docs/iwls-fetch\.md$|packages/engine/|Package\.swift$|\.github/workflows/)'; then
             echo 'swift=true' >> "$GITHUB_OUTPUT"
           else
             echo 'swift=false' >> "$GITHUB_OUTPUT"
@@ -214,6 +214,8 @@ jobs:
           path: |
             kotlin/build/reports/
             kotlin/build/test-results/
+            kotlin/iwls/build/reports/
+            kotlin/iwls/build/test-results/
 
   fixtures:
     needs: changes

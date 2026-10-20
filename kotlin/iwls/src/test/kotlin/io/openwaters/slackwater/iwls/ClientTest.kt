@@ -58,9 +58,27 @@ class ClientTest {
         val dropped = FakeServer(SocketException("Connection reset"), 200)
         assertEquals(emptyList(), dropped.client().stationList())
         assertEquals(listOf(2.0), dropped.delays)
-        val tls = FakeServer(SSLHandshakeException("bad certificate"))
-        assertFailsWith<SSLHandshakeException> { tls.client().stationList() }
+        // Not retried here, as the contract says, but not Permanent either: behind a captive portal
+        // or with a wrong clock, the same request succeeds once the device is fixed.
+        val tls = FakeServer(SSLHandshakeException("PKIX path building failed"))
+        val error = assertFailsWith<IwlsException.Transient> { tls.client().stationList() }
+        assertIs<SSLHandshakeException>(error.cause)
         assertEquals(emptyList(), tls.delays)
+    }
+
+    @Test fun onlyIwlsItselfMakesAFailurePermanent() = runTest {
+        // Another HTTP stack can report being offline as something other than an IOException.
+        val offline = FakeServer(java.nio.channels.UnresolvedAddressException())
+        val error = assertFailsWith<IwlsException.Transient> { offline.client().stationList() }
+        assertIs<java.nio.channels.UnresolvedAddressException>(error.cause)
+        assertEquals(emptyList(), offline.delays)
+    }
+
+    @Test fun aTransportFailureThatOutlastsTheRetriesIsTransientWithItsCause() = runTest {
+        val offline = FakeServer(*Array(4) { java.net.UnknownHostException("api-iwls.dfo-mpo.gc.ca") })
+        val error = assertFailsWith<IwlsException.Transient> { offline.client().stationList() }
+        assertIs<java.net.UnknownHostException>(error.cause)
+        assertEquals(listOf(2.0, 4.0, 8.0), offline.delays)
     }
 
     @Test fun ignoresRetryAfterHeadersItCannotSleepFor() = runTest {
@@ -78,12 +96,34 @@ class ClientTest {
     }
 
     @Test fun aMalformedBodyFailsWithoutRetry() = runTest {
-        for (body in listOf("", "<html>busy</html>")) {
+        for (body in listOf("<html>busy</html>", """[{"id":"a","officialName":"x","latitude":0,"longitude":0}]""")) {
             val server = FakeServer(200, body = body)
-            assertFails(body) { server.client().stationList() }
+            assertFailsWith<IwlsException.Permanent>(body) { server.client().stationList() }
             assertEquals(1, server.urls.size)
             assertEquals(emptyList(), server.delays)
         }
+    }
+
+    @Test fun retriesAnEmptyResponse() = runTest {
+        // The contract counts an empty response as transient, as Swift's zeroByteResource is.
+        var calls = 0
+        val transport = IwlsTransport { calls++; IwlsResponse(200, if (calls == 1) "" else "[]", null) }
+        val delays = mutableListOf<Double>()
+        assertEquals(emptyList(), IwlsClient(transport, IwlsPacer(0)) { delays += it }.stationList())
+        assertEquals(listOf(2.0), delays)
+    }
+
+    @Test fun retriesATransportsOwnTimeoutWhileTheCallerIsStillRunning() = runTest {
+        // A transport that bounds its own call with withTimeout throws a cancellation the caller did not ask for.
+        var calls = 0
+        val transport = IwlsTransport {
+            calls++
+            if (calls == 1) withTimeout(1) { delay(10) }
+            IwlsResponse(200, "[]", null)
+        }
+        val delays = mutableListOf<Double>()
+        assertEquals(emptyList(), IwlsClient(transport, IwlsPacer(0)) { delays += it }.stationList())
+        assertEquals(listOf(2.0), delays)
     }
 
     @Test fun readsMetadataForTheEncodedId() = runTest {
@@ -112,13 +152,6 @@ class ClientTest {
         pending.cancelAndJoin()
         assertTrue(pending.isCancelled)
         assertEquals(1, server.urls.size)
-    }
-
-    @Test fun aTransportsCancellationPropagatesWithoutRetry() = runTest {
-        val server = FakeServer(kotlinx.coroutines.CancellationException("stopped"))
-        assertFailsWith<kotlinx.coroutines.CancellationException> { server.client().stationList() }
-        assertEquals(1, server.urls.size)
-        assertEquals(emptyList(), server.delays)
     }
 
     @Test fun defaultClientsShareOnePacer() {

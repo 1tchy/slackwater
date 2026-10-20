@@ -1,6 +1,8 @@
 package io.openwaters.slackwater.iwls
 
 import io.openwaters.slackwater.iwls.IwlsFetch.Outcome
+import java.io.EOFException
+import java.net.SocketTimeoutException
 import java.net.URL
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.ceil
@@ -14,16 +16,27 @@ class IwlsClient internal constructor(
     internal val pacer: IwlsPacer,
     private val sleep: suspend (Double) -> Unit,
 ) {
-    constructor(transport: IwlsTransport = HttpUrlConnectionTransport(), pacer: IwlsPacer = sharedPacer) :
+    // Every public client shares the process pacer, as the contract requires; only tests pace separately.
+    constructor(transport: IwlsTransport = HttpUrlConnectionTransport()) : this(transport, sharedPacer)
+
+    internal constructor(transport: IwlsTransport, pacer: IwlsPacer) :
         this(transport, pacer, { seconds -> delay(ceil(seconds * 1_000).toLong()) })
 
-    suspend fun stationList(): List<IwlsStation> = IwlsFetch.decodeStations(get(IwlsFetch.stationsUrl))
+    suspend fun stationList(): List<IwlsStation> = decoding(get(IwlsFetch.stationsUrl), IwlsFetch::decodeStations)
 
-    suspend fun metadata(stationId: String): IwlsMetadata = IwlsFetch.decodeMetadata(get(IwlsFetch.metadataUrl(stationId)))
+    suspend fun metadata(stationId: String): IwlsMetadata =
+        decoding(get(IwlsFetch.metadataUrl(stationId)), IwlsFetch::decodeMetadata)
 
     /** One fit-series chunk on the 15-minute grid. */
     suspend fun series(code: String, stationId: String, chunk: ChsChunk): List<ChsSample> =
-        IwlsFetch.onGrid(IwlsFetch.decode(get(IwlsFetch.dataUrl(code, stationId, chunk))))
+        IwlsFetch.onGrid(decoding(get(IwlsFetch.dataUrl(code, stationId, chunk)), IwlsFetch::decode))
+
+    // A body IWLS sent but nobody can read would be the same body next time.
+    private fun <T> decoding(body: String, decode: (String) -> T): T = try {
+        decode(body)
+    } catch (e: IllegalArgumentException) {
+        throw IwlsException.Permanent("IWLS sent a response that could not be read", e)
+    }
 
     private suspend fun get(url: URL): String {
         var attempt = 0
@@ -31,30 +44,40 @@ class IwlsClient internal constructor(
             attempt += 1
             pacer.await()
             var failure: Exception? = null
-            val response = try {
+            var response = try {
                 transport.get(url)
-            } catch (e: CancellationException) {
-                throw e
             } catch (e: Exception) {
                 // A failure that arrives because the caller cancelled is the cancellation, not a retry.
                 currentCoroutineContext().ensureActive()
-                failure = e
+                // A cancellation the caller did not ask for is the transport's own timeout.
+                failure = if (e is CancellationException) SocketTimeoutException("IWLS transport timed out").apply { initCause(e) } else e
                 null
             }
-            // Only a 200 supplies a body; decoding errors are not retried.
-            if (response != null && response.status == 200) return response.body.orEmpty()
+            // Only a 200 supplies a body; decoding errors are not retried, but an empty response is.
+            if (response != null && response.status == 200) {
+                val body = response.body
+                if (!body.isNullOrEmpty()) return body
+                failure = EOFException("IWLS sent an empty response")
+                response = null
+            }
             val outcome = if (response != null) Outcome.Status(response.status) else Outcome.Failure(failure!!)
             val retryAfter = response?.let { IwlsFetch.parseRetryAfter(it.retryAfter) }
             val seconds = IwlsFetch.retryDelaySeconds(outcome, attempt, retryAfter) ?: throw when (outcome) {
                 is Outcome.Status -> IwlsFetch.terminalError(outcome.code)
-                is Outcome.Failure -> outcome.error
+                is Outcome.Failure -> wrap(outcome.error)
             }
             sleep(seconds)
         }
     }
 
+    // Only IWLS's own answer (a client error, an unreadable body) is permanent. A transport failure
+    // the client did not retry, a TLS one among them, can still succeed later: behind a captive
+    // portal, after a clock is corrected, or once a stack's own idea of "offline" passes.
+    private fun wrap(error: Throwable): IwlsException =
+        error as? IwlsException ?: IwlsException.Transient("IWLS request failed: $error", error)
+
     companion object {
-        /** Shared by every client built with the default pacer, so separate callers cannot double the request rate. */
-        val sharedPacer = IwlsPacer()
+        /** Shared by every public client, so separate callers cannot double the request rate. */
+        internal val sharedPacer = IwlsPacer()
     }
 }

@@ -9,7 +9,7 @@ import kotlinx.coroutines.sync.withLock
  * The gap runs from when the previous request was actually admitted, so a stalled thread
  * cannot release a burst, and a waiter cancelled before its turn takes no slot.
  */
-class IwlsPacer internal constructor(private val intervalNanos: Long, private val nanoTime: () -> Long) {
+internal class IwlsPacer(private val intervalNanos: Long, private val nanoTime: () -> Long) {
     constructor(intervalMillis: Long = 2_500) : this(intervalMillis * 1_000_000, System::nanoTime)
 
     val intervalMillis: Long get() = intervalNanos / 1_000_000

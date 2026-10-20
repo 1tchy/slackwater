@@ -55,11 +55,11 @@ The constants here illustrate the API, not a real station. Tide amplitudes, `off
 
 All numeric inputs must be finite. Steps must be positive, representable at the requested epoch and at least one nanosecond. Timeline and event searches exceeding the indexed work/result range are rejected. Invalid inputs throw `IllegalArgumentException`. Reversed windows return empty lists. Equal timeline bounds produce the samples from outward snapping; event roots on an exact boundary are not guaranteed. Steps default to 600 seconds; the start is floored and the end ceiled to the step on the UTC epoch grid. No default time zone enters prediction. Station constructors copy caller collections, and requests have independent calculation state.
 
-Unknown names and zero amplitudes contribute nothing. Astronomy returns null for an unknown name or a catalog entry without a complete equilibrium definition. IHO node corrections are supported. `ChsTideFit` and `ChsCurrentFit` carry the CHS tide and current fit recipes shared with TypeScript and Swift, and `ChsCurrentFit.project` makes a current gate's `HarmonicSample` series. Schureman, fitting, station lookup, datum resolution, ranking, derived slack and publication tooling are outside this port.
+Unknown names and zero amplitudes contribute nothing. Astronomy returns null for an unknown name or a catalog entry without a complete equilibrium definition. IHO node corrections are supported. `ChsTideFit` and `ChsCurrentFit` carry the CHS tide and current fit recipes shared with TypeScript and Swift, and `ChsCurrentFit.project` makes a current gate's `HarmonicSample` series. Schureman, fitting, station lookup, datum resolution, ranking, derived slack and publication tooling are outside this port; CHS stations are resolved by the separate [IWLS module](#iwls-fetching).
 
 ## IWLS fetching
 
-`io.openwaters:slackwater-iwls` fetches the inputs for fitting Canadian Hydrographic Service stations on the device, following the [IWLS fetching contract](../docs/iwls-fetch.md) and its shared fixtures. It is a separate module so the engine stays free of I/O and dependencies; it does not depend on the engine. Its runtime dependencies are `kotlinx-coroutines-core` and `kotlinx-serialization-json`. Add it beside the engine:
+`io.openwaters:slackwater-iwls` fetches the inputs for fitting Canadian Hydrographic Service stations on the device, following the [IWLS fetching contract](../docs/iwls-fetch.md) and its shared fixtures. It is a separate module so the engine stays free of I/O and dependencies; it does not depend on the engine. Its runtime dependencies are `kotlinx-coroutines-core` and `kotlinx-serialization-json`, and like the engine it needs Android `minSdk = 26` for `java.time`. It is MIT licensed, as the engine and the Swift client it follows are. It resolves through the same composite build as the engine (see [Use from source](#use-from-source)); add it beside the engine:
 
 ```kotlin
 dependencies {
@@ -72,13 +72,14 @@ import io.openwaters.slackwater.iwls.*
 import java.time.Instant
 import java.time.ZoneId
 
-val client = IwlsClient()
-val station = IwlsFetch.resolve("Victoria", 48.424, -123.371, "wlp", client.stationList())
-val end = IwlsFetch.localMidnight(Instant.now(), ZoneId.of("America/Vancouver"))
-val samples = IwlsFetch.chunkPlan(60.0, end).flatMap { client.series("wlp", station.id, it) }.sortedBy { it.tMillis }
+suspend fun victoriaSamples(client: IwlsClient = IwlsClient()): List<ChsSample> {
+    val station = IwlsFetch.resolve("Victoria", 48.424, -123.371, "wlp", client.stationList())
+    val end = IwlsFetch.localMidnight(Instant.now(), ZoneId.of("America/Vancouver"))
+    return IwlsFetch.chunkPlan(60.0, end).flatMap { client.series("wlp", station.id, it) }.sortedBy { it.tMillis }
+}
 ```
 
-Every client call is a `suspend` function. Requests from all default clients share one pacer, 2.5 seconds apart, and each call retries rate limits, server errors and dropped links as the contract specifies. Cancelling the coroutine cancels pacing, backoff and the request itself. `IwlsException.Permanent` means another attempt would fail the same way; `IwlsException.Transient` leaves the next attempt to the application's queue. The default transport is `HttpURLConnection`, bounded at 300 seconds an attempt; pass another `IwlsTransport` to use a different HTTP stack. Caching, queueing and fitting belong to the application; use `ChsChunk.canCache` before storing a chunk. The client fetches for the user's own device and does not authorize redistributing CHS predictions.
+Every client call is a `suspend` function. Requests from all default clients share one pacer, 2.5 seconds apart, and each call retries rate limits, server errors and dropped links as the contract specifies. Cancelling the coroutine ends pacing, backoff and the wait for the request at once. Apart from cancellation, every failure is an `IwlsException`, with the transport's or decoder's error as its `cause`: `Permanent` is IWLS's own answer, a client error or a body that cannot be read, and another attempt would get the same one; `Transient` is everything else, a TLS failure included, and leaves the next attempt to the application's queue. TLS failures are not retried inside the client, but a captive portal or a wrong clock can clear later. The default transport is `HttpURLConnection`, each attempt on its own thread and bounded at 300 seconds; unlike Swift's session it does not wait for connectivity, so an offline device fails as `Transient` after its retries, quickly when lookups fail at once and slowly on a network that drops packets without answering. Pass another `IwlsTransport` to use a different HTTP stack. A request can take far longer than a WorkManager worker's 10-minute run: four attempts bounded at 300 seconds, or a 600-second `Retry-After`. Run a download as a long-running foreground worker, or fetch one chunk per work request so a stopped worker loses only that chunk. The module is tested on the JVM; as with the engine, execution on an Android device is pending. Caching, queueing and fitting belong to the application; use `ChsChunk.canCache` before storing a chunk. The client fetches for the user's own device and does not authorize redistributing CHS predictions.
 
 ## Subordinates and datums
 

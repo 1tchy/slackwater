@@ -11,7 +11,8 @@ data class ChsSample(val tMillis: Long, val value: Double)
 data class ChsChunk(val start: Instant, val end: Instant) {
     /** A full week on the epoch grid, so its identity is the same on every day it is planned. */
     val isCacheable: Boolean
-        get() = end.epochSecond - start.epochSecond == WEEK_SECONDS && end.nano == start.nano
+        get() = start.nano == 0 && Math.floorMod(start.epochSecond, WEEK_SECONDS) == 0L &&
+            end == start.plusSeconds(WEEK_SECONDS)
 
     /** A full week's identity never changes, so an empty response kept under it would be a missing week for good. */
     fun canCache(samples: List<ChsSample>): Boolean = isCacheable && samples.isNotEmpty()
@@ -27,10 +28,11 @@ data class IwlsStation(
 
 data class IwlsMetadata(val floodDirection: Double?, val ebbDirection: Double?)
 
-sealed class IwlsException(message: String) : Exception(message) {
+/** Every failure the client reports, apart from cancellation; `cause` keeps the transport's or decoder's own error. */
+sealed class IwlsException(message: String, cause: Throwable? = null) : Exception(message, cause) {
     /** Another attempt would get the same answer. */
-    class Permanent(message: String) : IwlsException(message)
+    class Permanent(message: String, cause: Throwable? = null) : IwlsException(message, cause)
 
     /** The request might succeed later; the application's queue decides when. */
-    class Transient(message: String) : IwlsException(message)
+    class Transient(message: String, cause: Throwable? = null) : IwlsException(message, cause)
 }

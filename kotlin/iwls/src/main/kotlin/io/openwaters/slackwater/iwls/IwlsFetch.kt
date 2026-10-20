@@ -1,12 +1,11 @@
 package io.openwaters.slackwater.iwls
 
 import java.io.EOFException
-import java.net.ProtocolException
+import java.io.IOException
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.URLEncoder
-import java.net.UnknownHostException
 import java.time.Duration
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -38,10 +37,12 @@ object IwlsFetch {
         require(days.isFinite() && days > 0) { "chunkPlan needs a positive, finite duration" }
         val endSeconds = end.epochSecond + end.nano / 1e9
         val chunks = mutableListOf<ChsChunk>()
-        var t = floor((endSeconds - days * 86_400) / WEEK_SECONDS).toLong() * WEEK_SECONDS
-        while (t < endSeconds) {
-            val next = t + WEEK_SECONDS
-            chunks += ChsChunk(Instant.ofEpochSecond(t), if (next < endSeconds) Instant.ofEpochSecond(next) else end)
+        // Only the grid-aligned start is computed in Double; every comparison is on exact instants,
+        // since a Double near 1.8e9 seconds cannot tell an end 100 ns past a boundary from the boundary.
+        var t = Instant.ofEpochSecond(floor((endSeconds - days * 86_400) / WEEK_SECONDS).toLong() * WEEK_SECONDS)
+        while (t < end) {
+            val next = t.plusSeconds(WEEK_SECONDS)
+            chunks += ChsChunk(t, if (next < end) next else end)
             t = next
         }
         return chunks.reversed()
@@ -78,7 +79,8 @@ object IwlsFetch {
             station.requireString("officialName"),
             station.requireNumber("latitude"),
             station.requireNumber("longitude"),
-            station.getValue("timeSeries").jsonArray.map { it.jsonObject.requireString("code") },
+            (station["timeSeries"] as? JsonArray ?: throw IllegalArgumentException("IWLS timeSeries must be an array"))
+                .map { it.jsonObject.requireString("code") },
         )
     }
 
@@ -188,12 +190,27 @@ object IwlsFetch {
         if (status in 400..499 && status != 429) IwlsException.Permanent("HTTP $status")
         else IwlsException.Transient("HTTP $status")
 
-    /** Timeouts, unreachable or unknown hosts, lost links, and invalid responses; never TLS failures or cancellation. */
-    fun isTransient(error: Throwable): Boolean = when (error) {
-        is SSLException -> false
-        is SocketTimeoutException, is SocketException, is UnknownHostException, is ProtocolException, is EOFException -> true
-        else -> false
+    /**
+     * Any I/O failure anywhere in the cause chain: timeouts, unreachable or unknown hosts, lost
+     * links, invalid responses. Never a failed TLS handshake, certificate or protocol, and never
+     * cancellation or a programming error.
+     */
+    fun isTransient(error: Throwable): Boolean {
+        val chain = generateSequence(error) { it.cause }.take(16).toList()
+        // A TLS failure (handshake, certificate, protocol, a server that does not speak this TLS)
+        // gets the same answer next time, however it is wrapped, unless the link itself dropped
+        // under it: stacks report a reset during TLS as a TLS failure too.
+        if (chain.any { it is SSLException } && chain.none { it.isLinkFailure() }) return false
+        // Stacks report lost links as plain IOExceptions: the JDK's "Premature EOF", Android's
+        // "unexpected end of stream", Conscrypt's bare SSLException for a reset. A queue told one
+        // was permanent would drop a chunk the next attempt would fetch.
+        return chain.any { it is IOException }
     }
+
+    // Conscrypt reports a reset under TLS with no cause, only this text in the message.
+    private fun Throwable.isLinkFailure(): Boolean =
+        this is SocketException || this is EOFException || this is SocketTimeoutException ||
+            message.orEmpty().let { "Connection reset" in it || "I/O error during system call" in it }
 
     // Decimal seconds only: no surrounding spaces, no hex or binary literal, no HTTP date.
     private val RETRY_AFTER = Regex("""[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?""")
