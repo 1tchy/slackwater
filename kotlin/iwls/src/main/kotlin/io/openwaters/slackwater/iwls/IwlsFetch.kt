@@ -1,7 +1,9 @@
 package io.openwaters.slackwater.iwls
 
 import java.time.Instant
+import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.format.DateTimeParseException
 import java.util.Locale
 import kotlin.math.asin
 import kotlin.math.cos
@@ -66,6 +68,43 @@ object IwlsFetch {
             station.requireNumber("longitude"),
             station.getValue("timeSeries").jsonArray.map { it.jsonObject.requireString("code") },
         )
+    }
+
+    private const val GRID_MILLIS = 900_000L
+
+    // Whole seconds with a UTC designator or numeric offset, with or without its colon, as Swift's
+    // ISO8601DateFormatter reads them. Fractional seconds are skipped, as the contract says.
+    private val EVENT_DATE = Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:?\d{2})""")
+
+    internal fun parseEventDate(value: String): Long? {
+        if (!EVENT_DATE.matches(value)) return null
+        val withColon = if (value.endsWith("Z") || value[value.length - 3] == ':') value
+            else value.dropLast(2) + ":" + value.takeLast(2)
+        return try {
+            OffsetDateTime.parse(withColon).toInstant().toEpochMilli()
+        } catch (e: DateTimeParseException) {
+            null
+        }
+    }
+
+    /** Samples in response order, dropping a timestamp only when it repeats the one just kept. */
+    fun decode(json: String): List<ChsSample> {
+        val samples = ArrayList<ChsSample>()
+        for (element in Json.parseToJsonElement(json).jsonArray) {
+            val row = element.jsonObject
+            // Both fields are required even on a row whose date is skipped, as Swift's Codable decode requires them.
+            val value = row.requireNumber("value")
+            val t = parseEventDate(row.requireString("eventDate")) ?: continue
+            if (samples.lastOrNull()?.tMillis != t) samples += ChsSample(t, value)
+        }
+        return samples
+    }
+
+    fun onGrid(samples: List<ChsSample>): List<ChsSample> = samples.filter { it.tMillis % GRID_MILLIS == 0L }
+
+    fun decodeMetadata(json: String): IwlsMetadata {
+        val metadata = Json.parseToJsonElement(json).jsonObject
+        return IwlsMetadata(metadata.optionalNumber("floodDirection"), metadata.optionalNumber("ebbDirection"))
     }
 
     private fun distanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
