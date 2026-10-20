@@ -32,7 +32,9 @@ private func bisect(_ a0: Double, _ b0: Double, _ fa0: Double, _ params: [Prepar
 /// Extremes in [from, to]. Turning points are the roots of h'(t), found in
 /// whole UTC days, each day searched from its own midnight with its own
 /// brackets and node corrections (`provider(day)`), so the turning points of any
-/// instant are the same whichever window asks. Spurious ones are removed by
+/// instant are the same whichever window asks. Each day's first bracket opens
+/// on the previous day's h' at midnight, so a turn the two days' parameters put
+/// on either side of midnight is found once. Spurious ones are removed by
 /// their persistence (see `persists`), judged from the turning points around
 /// each extreme, never the window's edges. Days beyond the window are searched
 /// only while an extreme is undecided. The extremes of any window are therefore
@@ -46,9 +48,29 @@ func findExtremes(from: Date, to: Date, prominenceThreshold: Double,
     let lastSearchDay = (toS / daySeconds).rounded(.down) + maxLookaheadDays
     let firstSearchDay = firstDay - maxLookaheadDays
     // Z0 alone has no turning points on any day; don't search a year of days to find that out.
-    guard provider(Date(timeIntervalSince1970: firstDay * daySeconds))(0).contains(where: { $0.w > 0 }) else { return [] }
+    // Each day keeps only its h' at midnight, for the day after it, and the
+    // last parameters built are kept for the day that needs them next.
+    var closingSlopes: [Double: Double] = [:]
+    var lastDay = Double.nan
+    var lastParams: [PreparedParam] = []
+    func params(_ day: Double) -> [PreparedParam] {
+        if day != lastDay {
+            lastParams = provider(Date(timeIntervalSince1970: day * daySeconds))(0)
+            lastDay = day
+            closingSlopes[day] = evalHPrime(24, lastParams)
+        }
+        return lastParams
+    }
+    func closingSlope(_ day: Double) -> Double {
+        if closingSlopes[day] == nil { _ = params(day) }
+        return closingSlopes[day]!
+    }
+    guard params(firstDay).contains(where: { $0.w > 0 }) else { return [] }
+    // The day's own parameters come first, so the day before's, built for its
+    // closing slope, are still kept when a backward scan reaches it next.
     func dayTurns(_ day: Double) -> [RawExtreme] {
-        turningPoints(dayStart: day * daySeconds, provider: provider(Date(timeIntervalSince1970: day * daySeconds)))
+        let own = params(day)
+        return turningPoints(dayStart: day * daySeconds, params: own, openingSlope: closingSlope(day - 1))
     }
 
     // Turning points as one sequence indexed from the first turn of firstDay:
@@ -79,12 +101,14 @@ func findExtremes(from: Date, to: Date, prominenceThreshold: Double,
 }
 
 /// Every root of h'(t) in the UTC day starting at `dayStart` (epoch seconds),
-/// with `provider` anchored at its midnight. Node corrections refresh every 24
+/// with `params` anchored at its midnight. Node corrections refresh every 24
 /// hours, so one set holds for the whole day. Brackets are a quarter period of
 /// the fastest constituent, within which h' is taken to change sign at most
-/// once; a root exactly on a bracket boundary or on midnight is not guaranteed.
-private func turningPoints(dayStart: Double, provider: ParamProvider) -> [RawExtreme] {
-    let params = provider(0)
+/// once; a root exactly on a bracket boundary is not guaranteed. The first
+/// bracket opens on `openingSlope`, the previous day's h' at midnight, so a
+/// sign change between the two days' parameters is a turn at midnight, and a
+/// turn the previous day already found just before midnight is not found again.
+private func turningPoints(dayStart: Double, params: [PreparedParam], openingSlope: Double) -> [RawExtreme] {
     var maxSpeed = 0.0
     for p in params where p.w > maxSpeed { maxSpeed = p.w }
     if maxSpeed == 0 { return [] }
@@ -92,20 +116,18 @@ private func turningPoints(dayStart: Double, provider: ParamProvider) -> [RawExt
     let bracket = Double.pi / (2 * maxSpeed)
     var results: [RawExtreme] = []
     var tPrev = 0.0
-    var dPrev = evalHPrime(tPrev, params)
+    var dPrev = openingSlope
     var tNext = bracket
     while true {
         let tBound = min(tNext, 24)
         let dNext = evalHPrime(tBound, params)
         if dPrev != 0 && dNext != 0 && (dPrev > 0 ? dNext < 0 : dNext > 0) {
+            // The sign changed inside this day, so the root is this day's: the next
+            // day opens on the slope after it and won't find it again.
             let tRoot = bisect(tPrev, tBound, dPrev, params)
-            // A root at exactly midnight is not guaranteed (CONTRACT.md): the next
-            // day's first bracket opens on h' = 0 and skips it.
-            if tRoot < 24 {
-                let isHigh = evalHDoublePrime(tRoot, params) < 0
-                results.append(RawExtreme(time: Date(timeIntervalSince1970: dayStart + tRoot * 3600),
-                                          level: evalH(tRoot, params), high: isHigh))
-            }
+            let isHigh = evalHDoublePrime(tRoot, params) < 0
+            results.append(RawExtreme(time: Date(timeIntervalSince1970: dayStart + tRoot * 3600),
+                                      level: evalH(tRoot, params), high: isHigh))
         }
         if tBound >= 24 { break }
         tPrev = tBound
@@ -123,7 +145,7 @@ private func turningPoints(dayStart: Double, provider: ParamProvider) -> [RawExt
 /// CO-OPS drops successive high and low tides closer than its 0.030 m (Water
 /// Level Station Specifications, 2009, §1.3.2), but each extreme is decided
 /// from its own neighbourhood, so the result does not depend on where a search
-/// starts or ends. Of a turn found twice one copy survives.
+/// starts or ends. Of two equal turns in a row one survives.
 ///
 /// The nearest turn on each side always counts, however far away. Past it, the
 /// scan stops `maxContextDays` from the extreme, and an extreme still undecided

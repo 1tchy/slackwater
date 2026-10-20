@@ -4,6 +4,7 @@ import { findExtremes } from "../../src/harmonics/extremes.js";
 import { createParamsFactory } from "../../src/harmonics/params.js";
 import models from "../../src/constituents/index.js";
 import victoria from "../../../../fixtures/prediction-victoria.json";
+import midnight from "../../../../fixtures/extremes-midnight.json";
 
 const HOUR = 3_600_000;
 const t0 = Date.UTC(2026, 7, 1, 20);
@@ -122,5 +123,63 @@ describe("a subordinate of a reference whose kept extremes are days apart", () =
       const subordinate = subCentimetre.getTimelinePrediction({ start, end, offsets });
       subordinate.forEach((point, i) => expect(point.level).toBeCloseTo(reference[i].level, 9));
     }
+  });
+});
+
+describe("a turn on UTC midnight", () => {
+  // Cambridge, MD: each day's parameters put the low of 26 July on the other side of
+  // midnight, a second apart, so neither day's own search sees it change sign.
+  const cambridge = createTidePredictor(midnight.constituents);
+  const start = new Date(midnight.start);
+  const end = new Date(midnight.end);
+
+  it("is found once, and the high before it is kept", () => {
+    const found = cambridge.getExtremesPrediction({ start, end }).map(key);
+    const near = (iso: string, kind: "H" | "L") =>
+      found.filter(
+        (k) => k.endsWith(kind) && Math.abs(Number(k.split(":")[0]) - Date.parse(iso)) < 5 * 60_000,
+      );
+    expect(near("2026-07-26T00:00:00Z", "L")).toHaveLength(1);
+    expect(near("2026-07-25T17:50:00Z", "H")).toHaveLength(1);
+  });
+
+  it("matches every turn of the curve sampled each minute", () => {
+    const levels = cambridge.getTimelinePrediction({ start, end, timeFidelity: 60 });
+    let turns = 0;
+    for (let i = 2; i < levels.length; i++) {
+      const before = levels[i - 1].level - levels[i - 2].level;
+      const after = levels[i].level - levels[i - 1].level;
+      if (before * after < 0) turns++;
+    }
+    // Every turn here clears the 1 cm threshold.
+    expect(cambridge.getExtremesPrediction({ start, end })).toHaveLength(turns);
+  });
+});
+
+describe("a turn the two days' parameters put either side of midnight", () => {
+  // One wave whose high falls at midnight on every day but two: the day before
+  // puts it `before` hours from midnight and the day after `after` hours from it.
+  const midnightMs = Date.UTC(2026, 6, 26);
+  const w = (2 * Math.PI) / 12.42;
+  const second = 1 / 3600;
+  const wave = (before: number, after: number) => (dayStart: Date) => {
+    const fromMidnight = (midnightMs - dayStart.getTime()) / HOUR;
+    const shift = fromMidnight === 24 ? before : fromMidnight === 0 ? after : 0;
+    return () => [{ A: 1, w, phi: -w * (fromMidnight + shift) }];
+  };
+  const highs = (before: number, after: number) =>
+    findExtremes(0, 12, {
+      startMs: midnightMs - 6 * HOUR,
+      prominenceThreshold: 0,
+      paramsFrom: wave(before, after),
+    }).filter((e) => e.high);
+
+  it.each([
+    ["each day finds it on its own side", -second, second],
+    ["neither day finds it on its own side", second, -second],
+  ])("is found once when %s", (_, before, after) => {
+    const found = highs(before, after);
+    expect(found).toHaveLength(1);
+    expect(Math.abs(found[0].time.getTime() - midnightMs)).toBeLessThan(2000);
   });
 });

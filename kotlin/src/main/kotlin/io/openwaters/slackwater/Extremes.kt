@@ -51,15 +51,36 @@ private const val DAY_SECONDS = 86400L
 
 // Extremes in [from, to], independent of the window (slackwater#436): turning points come from
 // whole UTC days, each searched from its own midnight (`provider(day)`), and each extreme is kept
-// by its persistence. Days past the window load only while an extreme is undecided. A threshold
-// of zero keeps every turning point. Behaviour matches swift/Sources/SlackwaterKit/Extremes.swift.
+// by its persistence. Each day's first bracket opens on the previous day's h' at midnight, so a
+// turn the two days' parameters put on either side of midnight is found once. Days past the
+// window load only while an extreme is undecided. A threshold of zero keeps every turning point.
+// Behaviour matches swift/Sources/SlackwaterKit/Extremes.swift.
 internal fun findExtremes(from: Instant, to: Instant, prominenceThreshold: Double, provider: (Instant) -> ParamProvider): List<RawExtreme> {
     if (to < from) return emptyList()
     val firstDay = Math.floorDiv(from.epochSecond, DAY_SECONDS)
     val lastDay = Math.floorDiv(to.epochSecond, DAY_SECONDS)
-    val bracket = turningBracket(provider(Instant.ofEpochSecond(firstDay * DAY_SECONDS))) ?: return emptyList()
+    // Each day keeps only its h' at midnight, for the day after it, and the last provider built is
+    // kept for the day that needs it next.
+    val closingSlopes = HashMap<Long, Double>()
+    var builtDay = Long.MIN_VALUE
+    var built: ParamProvider? = null
+    fun providerOf(day: Long): ParamProvider {
+        if (day != builtDay) {
+            built = provider(Instant.ofEpochSecond(day * DAY_SECONDS))
+            builtDay = day
+            closingSlopes[day] = evalHPrime(24.0, built!!.params(0.0))
+        }
+        return built!!
+    }
+    fun closingSlope(day: Long): Double = closingSlopes[day] ?: run { providerOf(day); closingSlopes.getValue(day) }
+    val bracket = turningBracket(providerOf(firstDay)) ?: return emptyList()
     checkEventCapacity((lastDay - firstDay + 1 + 2 * MAX_LOOKAHEAD_DAYS) * 24.0, bracket)
-    fun dayTurns(day: Long) = turningPoints(provider(Instant.ofEpochSecond(day * DAY_SECONDS)))
+    // The day's own provider comes first, so the day before's, built for its closing slope, is still
+    // kept when a backward scan reaches it next.
+    fun dayTurns(day: Long): List<RawExtreme> {
+        val own = providerOf(day)
+        return turningPoints(own, closingSlope(day - 1))
+    }
     // One sequence indexed from the first turn of firstDay: `after` holds index 0 onward,
     // `before` index -1 backward. Days load at either end as a scan reaches them.
     val after = mutableListOf<RawExtreme>()
@@ -92,21 +113,24 @@ private fun turningBracket(provider: ParamProvider): Double? {
 }
 
 // Every root of h' in the day `provider` is anchored at. Node corrections refresh every 24 hours,
-// so one set holds for the whole day. A root on a bracket boundary or on midnight is not guaranteed.
-private fun turningPoints(provider: ParamProvider): List<RawExtreme> {
+// so one set holds for the whole day. A root on a bracket boundary is not guaranteed. The first
+// bracket opens on `openingSlope`, the previous day's h' at midnight, so a sign change between the
+// two days' parameters is a turn at midnight, and one the previous day already found is not found again.
+private fun turningPoints(provider: ParamProvider, openingSlope: Double): List<RawExtreme> {
     val bracket = turningBracket(provider) ?: return emptyList()
     val params = provider.params(0.0)
     val found = mutableListOf<RawExtreme>()
     var previous = 0.0
-    var dPrevious = evalHPrime(previous, params)
+    var dPrevious = openingSlope
     var next = bracket
     while (true) {
         val bound = min(next, 24.0)
         val derivative = evalHPrime(bound, params)
         if (dPrevious != 0.0 && derivative != 0.0 && (dPrevious > 0) != (derivative > 0)) {
-            val root = derivativeRoot(previous, bound, dPrevious, derivative, params)
-            // A root at exactly midnight is not guaranteed (CONTRACT.md): the next day's first bracket opens on h' = 0.
-            if (root < 24) found += RawExtreme(shifted(provider.start, root * 3600), evalH(root, params), evalHDoublePrime(root, params) < 0)
+            // The sign changed inside this day, so the root is this day's even where rounding puts it a
+            // hair past 24 h: the next day opens on the slope after it and won't find it again.
+            val root = min(derivativeRoot(previous, bound, dPrevious, derivative, params), 24.0)
+            found += RawExtreme(shifted(provider.start, root * 3600), evalH(root, params), evalHDoublePrime(root, params) < 0)
         }
         if (bound >= 24) break
         previous = bound; dPrevious = derivative; next += bracket

@@ -222,6 +222,8 @@ const DAY_MS = 86_400_000;
  * Turning points are the roots of h'(t), found in whole UTC days, each day
  * searched from its own midnight with its own brackets and node corrections,
  * so the turning points of any instant are the same whichever window asks.
+ * Each day's first bracket opens on the previous day's h' at midnight, so a
+ * turn the two days' parameters put on either side of midnight is found once.
  * Spurious ones are removed by their persistence (see filterExtremes), judged
  * from the turning points around each extreme, never the window's edges.
  * Days beyond the window are searched only while an extreme is undecided. The
@@ -236,9 +238,31 @@ export function findExtremes(
   const fromMs = startMs + fromHour * HOUR_MS;
   const toMs = startMs + toHour * HOUR_MS;
   const firstDay = Math.floor(fromMs / DAY_MS);
-  const dayTurns = (day: number) => turningPoints(day * DAY_MS, paramsFrom(new Date(day * DAY_MS)));
+  // Each day keeps only its h' at midnight, for the day after it, and the
+  // last parameters built are kept for the day that needs them next.
+  const closingSlopes = new Map<number, number>();
+  let lastDay = NaN;
+  let lastParams: ConstituentParam[] = [];
+  const paramsOf = (day: number) => {
+    if (day !== lastDay) {
+      lastParams = paramsFrom(new Date(day * DAY_MS))(0);
+      lastDay = day;
+      closingSlopes.set(day, evalHPrime(24, lastParams));
+    }
+    return lastParams;
+  };
+  const closingSlope = (day: number) => {
+    if (!closingSlopes.has(day)) paramsOf(day);
+    return closingSlopes.get(day)!;
+  };
+  // The day's own parameters come first, so the day before's, built for its
+  // closing slope, are still kept when a backward scan reaches it next.
+  const dayTurns = (day: number) => {
+    const params = paramsOf(day);
+    return turningPoints(day * DAY_MS, params, closingSlope(day - 1));
+  };
   // Z0 alone has no turning points on any day; don't search a year of days to find that out.
-  if (!paramsFrom(new Date(firstDay * DAY_MS))(0).some(({ w }) => w > 0)) return [];
+  if (!paramsOf(firstDay).some(({ w }) => w > 0)) return [];
 
   // Turning points as one sequence indexed from the first turn of firstDay:
   // `after` holds index 0 onward, `before` holds index -1 backward. Days are
@@ -275,18 +299,21 @@ export function findExtremes(
 }
 
 /**
- * Every root of h'(t) in the UTC day starting at dayStartMs, with `getParams`
+ * Every root of h'(t) in the UTC day starting at dayStartMs, with `params`
  * anchored at its midnight. Node corrections refresh every 24 hours, so one
  * set holds for the whole day. Brackets are a quarter period of the fastest
  * constituent, within which h' is taken to change sign at most once; a root
- * exactly on a bracket boundary or on midnight is not guaranteed.
+ * exactly on a bracket boundary is not guaranteed. The first bracket opens on
+ * `openingSlope`, the previous day's h' at midnight, so a sign change between
+ * the two days' parameters is a turn at midnight, and a turn the previous day
+ * already found just before midnight is not found again.
  */
 function turningPoints(
   dayStartMs: number,
-  getParams: (hour: number) => ConstituentParam[],
+  params: ConstituentParam[],
+  openingSlope: number,
 ): Extreme[] {
   const results: Extreme[] = [];
-  const params = getParams(0);
   let maxSpeed = 0;
   for (const { w } of params) {
     if (w > maxSpeed) maxSpeed = w;
@@ -294,7 +321,7 @@ function turningPoints(
   // findExtremes returns early for Z0 alone, so some constituent has speed.
   const bracket = Math.PI / (2 * maxSpeed);
   let tPrev = 0;
-  let dPrev = evalHPrime(tPrev, params);
+  let dPrev = openingSlope;
 
   for (let tNext = bracket; ; tNext += bracket) {
     const tBound = Math.min(tNext, 24);
@@ -302,20 +329,18 @@ function turningPoints(
 
     const signChanged = dPrev !== 0 && dNext !== 0 && (dPrev > 0 ? dNext < 0 : dNext > 0);
     if (signChanged) {
-      const tRoot = findRoot(tPrev, tBound, dPrev, dNext, params);
+      // The sign changed inside this day, so the root is this day's even where
+      // rounding puts it a hair past 24 h: the next day opens on the slope
+      // after it and won't find it again.
+      const tRoot = Math.min(findRoot(tPrev, tBound, dPrev, dNext, params), 24);
       const isHigh = evalHDoublePrime(tRoot, params) < 0;
-      // A root at exactly midnight is not guaranteed (CONTRACT.md): the next day's
-      // first bracket opens on h' = 0 and skips it.
-      // v8 ignore else -- @preserve
-      if (tRoot < 24) {
-        results.push({
-          time: new Date(dayStartMs + tRoot * HOUR_MS),
-          level: evalH(tRoot, params),
-          high: isHigh,
-          low: !isHigh,
-          label: isHigh ? "High" : "Low",
-        });
-      }
+      results.push({
+        time: new Date(dayStartMs + tRoot * HOUR_MS),
+        level: evalH(tRoot, params),
+        high: isHigh,
+        low: !isHigh,
+        label: isHigh ? "High" : "Low",
+      });
     }
 
     if (tBound >= 24) break;
@@ -334,7 +359,7 @@ function turningPoints(
  * NOAA CO-OPS drops successive high and low tides closer than its 0.030 m
  * (Water Level Station Specifications, 2009, §1.3.2), but each extreme is
  * decided from its own neighbourhood, so the result does not depend on where a
- * search starts or ends. Of a turn found twice one copy survives.
+ * search starts or ends. Of two equal turns in a row one survives.
  *
  * The nearest turn on each side always counts, however far away. Past it, the
  * scan stops MAX_CONTEXT_DAYS from the extreme, and an extreme still undecided
