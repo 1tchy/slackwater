@@ -22,8 +22,10 @@ class CatalogTest {
     @Test fun aliasesMatchAndUnknownAstronomyIsNull() {
         val t = Instant.parse("2026-01-01T00:00:00Z")
         assertEquals(constituentAstronomy("nu2", t), constituentAstronomy("NU2", t))
-        for (name in listOf("unknown", "3(SM)N2", "(SK)K5", "4ML12", "5MSN12")) {
-            assertNull(constituentAstronomy(name, t), name)
+        assertNull(constituentAstronomy("unknown", t))
+        // IHO gives these an alphabetical XDO only; the catalog carries it.
+        for (name in listOf("3(SM)N2", "(SK)K5", "4ML12", "5MSN12")) {
+            assertNotNull(constituentAstronomy(name, t), name)
         }
         val a = astro(t)
         assertEquals(0.0, Catalog.v0("unknown", a))
