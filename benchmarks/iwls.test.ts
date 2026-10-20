@@ -169,19 +169,30 @@ describe("the redistribution boundary", () => {
   // API, the CLI, the npm packages) may reach an IWLS client, directly or through a benchmark.
   test("no npm package reaches an IWLS client", () => {
     const root = join(import.meta.dirname, "..");
-    const sources = readdirSync(join(root, "packages"), { recursive: true, encoding: "utf-8" })
-      .filter((path) => !/(^|\/)(node_modules|dist)\//.test(path))
-      .filter((path) => /\.[cm]?[jt]sx?$/.test(path));
+    const files = readdirSync(join(root, "packages"), {
+      recursive: true,
+      encoding: "utf-8",
+    }).filter((path) => !/(^|\/)(node_modules|dist)\//.test(path));
+    const sources = files.filter((path) => /\.[cm]?[jt]sx?$/.test(path));
+    // Package manifests can alias a benchmark through "imports" or "exports".
+    const manifests = files.filter((path) => /(^|\/)package\.json$/.test(path));
     // A scan that matched nothing would pass vacuously.
     expect(sources).toContain("cli/bin/slackwater.js");
-    const offenders = sources.filter((path) => {
-      const source = readFileSync(join(root, "packages", path), "utf-8");
-      return (
-        /(from|import|require)\s*\(?\s*["'][^"']*(benchmarks\/|\/iwls(\.[cm]?[jt]s)?["'])/.test(
-          source,
-        ) || source.includes("api-iwls.dfo-mpo")
-      );
-    });
+    expect(manifests).toContain("cli/package.json");
+    // CHS serves IWLS from both hosts.
+    const hosts = ["api-iwls.dfo-mpo", "api-sine.dfo-mpo"];
+    const read = (path: string) => readFileSync(join(root, "packages", path), "utf-8");
+    const offenders = [
+      ...sources.filter((path) => {
+        const source = read(path);
+        return (
+          /(from|import|require)\s*\(?\s*["'`][^"'`]*(benchmarks\/|\/iwls(\.[cm]?[jt]s)?["'`])/.test(
+            source,
+          ) || hosts.some((host) => source.includes(host))
+        );
+      }),
+      ...manifests.filter((path) => /benchmarks\/|\/iwls\b/.test(read(path))),
+    ];
     expect(offenders).toEqual([]);
   });
 });

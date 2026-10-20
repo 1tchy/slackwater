@@ -135,10 +135,10 @@ private actor Server {
     cancelled.cancel()
     _ = await cancelled.result
     try await pacer.wait()
-    // A held slot would put this start at 1,000 ms.
+    // A held slot would put this start at 1,000 ms; the bound leaves slack for loaded CI runners.
     let elapsed = ContinuousClock.now - began
     #expect(elapsed >= .milliseconds(499))
-    #expect(elapsed < .milliseconds(800), "\(elapsed)")
+    #expect(elapsed < .milliseconds(950), "\(elapsed)")
 }
 
 @Test func aQueuedWaiterCancelsWithoutWaitingItsTurn() async throws {

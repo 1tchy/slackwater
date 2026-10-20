@@ -148,8 +148,8 @@ object IwlsFetch {
 
     private fun wholeSeconds(instant: Instant): String = instant.truncatedTo(ChronoUnit.SECONDS).toString()
 
-    // One path component: `/`, `%`, `?` and `#` escaped and the other sub-delimiters kept, as
-    // Swift's `urlPathAllowed` minus those four.
+    // One path component: RFC 3986's path characters kept, less `/`, the same set Swift spells
+    // out in `pathKept`. Everything else, including `%`, `?` and `#`, is percent-encoded.
     private const val PATH_KEPT = "-._~!\$&'()*+,;=:@"
 
     private fun pathComponent(id: String): String = buildString {
