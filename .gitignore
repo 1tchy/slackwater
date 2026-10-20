@@ -16,6 +16,7 @@ storybook-static
 /kotlin/.gradle/
 /kotlin/.kotlin/
 /kotlin/build/
+/kotlin/iwls/build/
 /kotlin/smoke/.gradle/
 /kotlin/smoke/build/
 /kotlin/smoke/.kotlin/

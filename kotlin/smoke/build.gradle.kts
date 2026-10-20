@@ -13,5 +13,8 @@ java {
     sourceCompatibility = JavaVersion.VERSION_1_8
     targetCompatibility = JavaVersion.VERSION_1_8
 }
-dependencies { implementation("io.openwaters:slackwater-engine:0.1.0") }
+dependencies {
+    implementation("io.openwaters:slackwater-engine:0.1.0")
+    implementation("io.openwaters:slackwater-iwls:0.1.0")
+}
 application { mainClass = "SmokeKt" }
