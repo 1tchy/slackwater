@@ -1,5 +1,7 @@
 import io.openwaters.slackwater.*
+import io.openwaters.slackwater.iwls.IwlsFetch
 import java.time.Instant
+import java.time.ZoneId
 
 fun main() {
     val from = Instant.parse("2026-06-01T00:00:00Z")
@@ -24,5 +26,7 @@ fun main() {
     check(subCurrent.events(from, to).isNotEmpty())
     check(subCurrent.speeds(from, to).all { it.speedKnots.isFinite() })
     check(constituentAstronomy("M2", from) != null)
+    val fitEnd = IwlsFetch.localMidnight(from, ZoneId.of("America/Vancouver"))
+    check(IwlsFetch.chunkPlan(60.0, fitEnd).size in 9..10)
     println("Public API consumer passed")
 }

@@ -1,6 +1,6 @@
 # IWLS fetching contract
 
-Version 1. Implementations conform to [`fixtures/iwls-fetch.json`](../fixtures/iwls-fetch.json), which contains synthetic stations and samples. `SlackwaterIWLS` is the Swift reference client. [`benchmarks/iwls.ts`](../benchmarks/iwls.ts) is an unpublished TypeScript implementation for this repository's scripts, so the CHS fit benchmark scores the samples a device fits. This contract covers fetching inputs for local CHS fitting; the prediction engines remain independent of runtime I/O.
+Version 1. Implementations conform to [`fixtures/iwls-fetch.json`](../fixtures/iwls-fetch.json), which contains synthetic stations and samples. `SlackwaterIWLS` is the Swift reference client, and [`slackwater-iwls`](../kotlin/README.md#iwls-fetching) is the Kotlin client for Android. [`benchmarks/iwls.ts`](../benchmarks/iwls.ts) is an unpublished TypeScript implementation for this repository's scripts, so the CHS fit benchmark scores the samples a device fits. This contract covers fetching inputs for local CHS fitting; the prediction engines remain independent of runtime I/O.
 
 ## Resolve a station
 
@@ -63,4 +63,4 @@ The client fetches directly for the user's own device. The TypeScript implementa
 
 ## Verification
 
-Run `swift test -c release --filter SlackwaterIWLSTests` and `npx vitest run --project benchmarks` from the repository root. Both suites consume the fixture directly and check the HTTP loop with synthetic responses, without contacting IWLS. Contract changes update the spec, fixture, and every implementing client's tests together. A fixture version change denotes a change to the fetching contract, independently of the harmonic fit recipe.
+Run `swift test -c release --filter SlackwaterIWLSTests` and `npx vitest run --project benchmarks` from the repository root, and `./gradlew :slackwater-iwls:test` from `kotlin/`. Each suite consumes the fixture directly and check the HTTP loop with synthetic responses, without contacting IWLS. Contract changes update the spec, fixture, and every implementing client's tests together. A fixture version change denotes a change to the fetching contract, independently of the harmonic fit recipe.

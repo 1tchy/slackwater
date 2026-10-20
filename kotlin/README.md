@@ -57,6 +57,29 @@ All numeric inputs must be finite. Steps must be positive, representable at the 
 
 Unknown names and zero amplitudes contribute nothing. Astronomy returns null for an unknown name or a catalog entry without a complete equilibrium definition. IHO node corrections are supported. `ChsTideFit` and `ChsCurrentFit` carry the CHS tide and current fit recipes shared with TypeScript and Swift, and `ChsCurrentFit.project` makes a current gate's `HarmonicSample` series. Schureman, fitting, station lookup, datum resolution, ranking, derived slack and publication tooling are outside this port.
 
+## IWLS fetching
+
+`io.openwaters:slackwater-iwls` fetches the inputs for fitting Canadian Hydrographic Service stations on the device, following the [IWLS fetching contract](../docs/iwls-fetch.md) and its shared fixtures. It is a separate module so the engine stays free of I/O and dependencies; it does not depend on the engine. Its runtime dependencies are `kotlinx-coroutines-core` and `kotlinx-serialization-json`. Add it beside the engine:
+
+```kotlin
+dependencies {
+    implementation("io.openwaters:slackwater-iwls:0.1.0")
+}
+```
+
+```kotlin
+import io.openwaters.slackwater.iwls.*
+import java.time.Instant
+import java.time.ZoneId
+
+val client = IwlsClient()
+val station = IwlsFetch.resolve("Victoria", 48.424, -123.371, "wlp", client.stationList())
+val end = IwlsFetch.localMidnight(Instant.now(), ZoneId.of("America/Vancouver"))
+val samples = IwlsFetch.chunkPlan(60.0, end).flatMap { client.series("wlp", station.id, it) }.sortedBy { it.tMillis }
+```
+
+Every client call is a `suspend` function. Requests from all default clients share one pacer, 2.5 seconds apart, and each call retries rate limits, server errors and dropped links as the contract specifies. Cancelling the coroutine cancels pacing, backoff and the request itself. `IwlsException.Permanent` means another attempt would fail the same way; `IwlsException.Transient` leaves the next attempt to the application's queue. The default transport is `HttpURLConnection`, bounded at 300 seconds an attempt; pass another `IwlsTransport` to use a different HTTP stack. Caching, queueing and fitting belong to the application; use `ChsChunk.canCache` before storing a chunk. The client fetches for the user's own device and does not authorize redistributing CHS predictions.
+
 ## Subordinates and datums
 
 ```kotlin
