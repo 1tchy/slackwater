@@ -1,6 +1,6 @@
 # IWLS fetching contract
 
-Version 1. Implementations conform to [`fixtures/iwls-fetch.json`](../fixtures/iwls-fetch.json), which contains synthetic stations and samples. `SlackwaterIWLS` is the Swift reference client. This contract covers fetching inputs for local CHS fitting; the prediction engines remain independent of runtime I/O.
+Version 1. Implementations conform to [`fixtures/iwls-fetch.json`](../fixtures/iwls-fetch.json), which contains synthetic stations and samples. `SlackwaterIWLS` is the Swift reference client. [`benchmarks/iwls.ts`](../benchmarks/iwls.ts) is an unpublished TypeScript implementation for this repository's scripts, so the CHS fit benchmark scores the samples a device fits. This contract covers fetching inputs for local CHS fitting; the prediction engines remain independent of runtime I/O.
 
 ## Resolve a station
 
@@ -42,7 +42,7 @@ For current axes, use `GET /stations/{resolvedID}/metadata` and decode optional 
 
 ## Pace, retry, and cancel
 
-All client instances in a process share a pacer. Reserve request starts at least 2.5 seconds apart on a monotonic clock, including station-list, metadata, and retry attempts, so a wall-clock change cannot stretch the gap. A serial download queue is application policy; pacing alone does not limit in-flight requests. The default Swift URLSession waits for connectivity on Apple platforms and has a 300-second resource timeout. While it waits, an offline device or one denied cellular data fails each attempt as a timeout after 300 seconds rather than at once, and timeouts are retried, so a request can hold the queue for about 20 minutes before it fails. The resource timeout covers the whole transfer, so a link too slow to finish a response in 300 seconds fails the same way. Callers that supply a session own its configuration.
+All client instances in a process share a pacer. Reserve request starts at least 2.5 seconds apart on a monotonic clock, including station-list, metadata, and retry attempts, so a wall-clock change cannot stretch the gap. A serial download queue is application policy; pacing alone does not limit in-flight requests. The default Swift URLSession waits for connectivity on Apple platforms and has a 300-second resource timeout. While it waits, an offline device or one denied cellular data fails each attempt as a timeout after 300 seconds rather than at once, and timeouts are retried, so a request can hold the queue for about 20 minutes before it fails. The resource timeout covers the whole transfer, so a link too slow to finish a response in 300 seconds fails the same way. Callers that supply a session own its configuration. The TypeScript client's default fetch bounds each attempt at 300 seconds the same way, and a timed-out attempt is a transient failure.
 
 Try each request at most four times, including its first attempt. `attempt` in the fixture counts the attempt that just failed, starting at one. On a retry:
 
@@ -59,8 +59,8 @@ Only HTTP 200 supplies a successful body. Do not retry body-decoding errors. Can
 
 `SlackwaterIWLS`, this spec, and the synthetic fixtures are MIT-licensed. The Swift client is extracted from the copyright holder's iOS implementation and relicensed with their authorization. The GPL iOS application keeps its own license; the MIT module has no dependency on it or on `SlackwaterKit`.
 
-The client fetches directly for the user's own device. It does not authorize redistribution of CHS predictions. Keep it out of `@slackwater/api` and the CLI's prediction-serving paths. The contract fixtures contain no fetched CHS observations or predictions. The Kotlin engine and TypeScript prediction engine have no dependency on this networking module; their client adapters can use the same fixture corpus.
+The client fetches directly for the user's own device. The TypeScript implementation also fetches for this repository's validation benchmark, which keeps responses in its run cache and publishes only scores. It does not authorize redistribution of CHS predictions. Keep it out of `@slackwater/api` and the CLI's prediction-serving paths. The contract fixtures contain no fetched CHS observations or predictions. The Kotlin engine and TypeScript prediction engine have no dependency on this networking module; their client adapters can use the same fixture corpus.
 
 ## Verification
 
-Run `swift test -c release --filter SlackwaterIWLSTests` from the repository root. The tests consume the fixture directly and check the HTTP loop with synthetic responses, without contacting IWLS. Contract changes update the spec, fixture, and every implementing client's tests together. A fixture version change denotes a change to the fetching contract, independently of the harmonic fit recipe.
+Run `swift test -c release --filter SlackwaterIWLSTests` and `npx vitest run --project benchmarks` from the repository root. Both suites consume the fixture directly and check the HTTP loop with synthetic responses, without contacting IWLS. Contract changes update the spec, fixture, and every implementing client's tests together. A fixture version change denotes a change to the fetching contract, independently of the harmonic fit recipe.

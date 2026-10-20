@@ -1,17 +1,40 @@
 // Fits CHS tide ports with `chsTideFit` from CHS's own `wlp` predictions and
 // scores held-out weeks against them, using the bar in
-// docs/validation/chs-tides.md. The fit ends at the start of the current UTC
-// month, so each monthly run measures a different season.
+// docs/validation/chs-tides.md. The fit inputs follow the IWLS fetching
+// contract (docs/iwls-fetch.md), so they are the samples a phone fits from:
+// the window ends at the port's local midnight on the 1st of the current
+// month, and so each monthly run measures a different season.
 import { expect } from "vitest";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { createWriteStream } from "fs";
 import { join } from "path";
 import { chsTideFit, createTidePredictor, fit } from "@slackwater/engine";
+import {
+  BASE,
+  IwlsError,
+  chunkPlan,
+  createClient,
+  decode,
+  isTransient,
+  localMidnight,
+  parseEventDate,
+  pathComponent,
+  type Chunk,
+  type IwlsStation,
+  type Sample,
+} from "./iwls.ts";
 
 const __dirname = new URL(".", import.meta.url).pathname;
-const IWLS = "https://api-iwls.dfo-mpo.gc.ca/api/v1";
 const DAY = 86_400_000;
-const STEP = chsTideFit.sampleMinutes * 60_000;
+const iwls = createClient();
+
+// The contract fetches and filters to a 15-minute grid; a recipe on another
+// grid would be fitted from samples it did not ask for.
+if (chsTideFit.sampleMinutes !== 15) {
+  throw new Error(
+    `chsTideFit.sampleMinutes is ${chsTideFit.sampleMinutes}; docs/iwls-fetch.md fixes the grid at 15`,
+  );
+}
 
 const FAST = !!process.env.FAST;
 // A model never expires on device, and its error follows the seasonal mean
@@ -30,21 +53,15 @@ const MATCH_WINDOW_MIN = 180;
 
 await mkdir(".test-cache", { recursive: true });
 
+// Midday UTC on the 1st is the 1st in every Canadian zone, so each port's
+// local midnight falls on the same calendar day.
 const now = new Date();
-const fitEnd = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
-const fitStart = fitEnd - chsTideFit.days * DAY;
-const stamp = new Date(fitEnd).toISOString().slice(0, 10);
-
-interface IwlsStation {
-  id: string;
-  code: string;
-  officialName: string;
-  timeSeries: { code: string }[];
-}
+const anchor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 12));
+const stamp = anchor.toISOString().slice(0, 10);
 
 // Every Nth station serving both series, in code order, so the sample spreads
 // across the coast and stays the same from run to run.
-const all: IwlsStation[] = await fetchIwls("stations", "stations");
+const all = await cached("stations", () => iwls.stationList());
 const eligible = all
   .filter((s) => ["wlp", "wlp-hilo"].every((c) => s.timeSeries.some((t) => t.code === c)))
   .sort((a, b) => a.code.localeCompare(b.code));
@@ -53,12 +70,14 @@ const sample = eligible.filter((_, i) => i % stride === 0);
 
 console.log(
   `Fitting ${sample.length} of ${eligible.length} CHS tide ports: ` +
-    `${chsTideFit.days} d ending ${stamp}, held out at +${HOLDOUT_DAYS.join(", +")} d`,
+    `${chsTideFit.days} d planned, ending at local midnight on ${stamp}, ` +
+    `held out at +${HOLDOUT_DAYS.join(", +")} d`,
 );
 
 interface Stat {
   station: string;
   name: string;
+  fit_days: number;
   holdout_days: number;
   fit_rms_cm: number;
   range_cm: number;
@@ -76,10 +95,37 @@ interface Stat {
 
 const stats: Stat[] = [];
 const skipped: string[] = [];
+// Transient failures back to back mean IWLS itself is down or throttling the run.
+// Each can spend half an hour in rate-limit waits, so stop rather than wait out every port.
+// A port's own data problem (no time zone, a 404) is skipped without counting.
+const MAX_OUTAGES_IN_A_ROW = 3;
+let outagesInARow = 0;
+
+function skip(label: string, error: unknown) {
+  skipped.push(`${label} (${reason(error)})`);
+  const outage = (error instanceof IwlsError && error.kind === "transient") || isTransient(error);
+  // A port's own data problem means IWLS answered, which ends a run of outages.
+  if (!outage) {
+    outagesInARow = 0;
+    return;
+  }
+  if (++outagesInARow >= MAX_OUTAGES_IN_A_ROW) {
+    throw new Error(`IWLS failed ${outagesInARow} times in a row; skipped: ${skipped.join(", ")}`);
+  }
+}
 
 for (const station of sample) {
-  const samples = await series(station, "wlp", fitStart, fitEnd);
-  const grid = samples.filter((s) => s.t % STEP === 0);
+  // The contract's retries are sized for a device queue that tries again later;
+  // here a port that still fails is skipped, so one bad hour keeps the run.
+  let fitEnd: number;
+  let grid: Sample[];
+  try {
+    ({ fitEnd, grid } = await fitInputs(station));
+    outagesInARow = 0;
+  } catch (error) {
+    skip(station.code, error);
+    continue;
+  }
   if (grid.length < 1 + 2 * chsTideFit.basis.length) {
     skipped.push(station.code);
     continue;
@@ -93,8 +139,16 @@ for (const station of sample) {
   for (const holdout of HOLDOUT_DAYS) {
     const start = fitEnd + holdout * DAY;
     const end = start + 7 * DAY;
-    const truth = (await series(station, "wlp", start, end)).filter((s) => s.t % STEP === 0);
-    const hilo = await series(station, "wlp-hilo", start, end);
+    let truth: Sample[];
+    let hilo: Sample[];
+    try {
+      truth = await wlp(station, { start, end });
+      hilo = await hiloEvents(station, { start, end });
+      outagesInARow = 0;
+    } catch (error) {
+      skip(`${station.code}@+${holdout}`, error);
+      continue;
+    }
     if (truth.length === 0 || hilo.length < 2) {
       skipped.push(`${station.code}@+${holdout}`);
       continue;
@@ -136,6 +190,7 @@ for (const station of sample) {
     stats.push({
       station: station.code,
       name: station.officialName,
+      fit_days: (grid[grid.length - 1].t - grid[0].t) / DAY,
       holdout_days: holdout,
       fit_rms_cm: result.rms * 100,
       range_cm: range,
@@ -185,74 +240,90 @@ for (const holdout of HOLDOUT_DAYS) {
   const p90 = ntile(rmse, 0.9);
   console.log(`+${holdout} d:`, { count: rows.length, passing, p50RmseCm: p50, p90RmseCm: p90 });
 
-  expect(rows.length, `+${holdout} d stations scored`).toBeGreaterThan(0);
-  // Baseline expectations from the first run (fit ending 2026-10-01) in
-  // docs/validation/chs-tides.md, with margin for other seasons. Most misses
-  // are the seasonal mean level; move these toward the bar as the recipe
-  // improves.
+  // Skipped ports must not leave the shares below resting on a handful of rows,
+  // while the three-port FAST run still tolerates one.
+  expect(rows.length, `+${holdout} d stations scored`).toBeGreaterThanOrEqual(
+    Math.max(1, Math.floor(0.8 * sample.length)),
+  );
+  // Baseline expectations from the run recorded in docs/validation/chs-tides.md
+  // (fit ending at local midnight 2026-10-01), with margin for other seasons.
+  // Most misses are the seasonal mean level; move these toward the bar as the
+  // recipe improves.
   expect(passing / rows.length, `+${holdout} d share passing`).toBeGreaterThanOrEqual(0.3);
   expect(p50, `+${holdout} d RMSE p50`).toBeLessThan(12);
   expect(p90, `+${holdout} d RMSE p90`).toBeLessThan(25);
 }
 
-interface Sample {
-  t: number;
-  v: number;
-}
-
-async function series(station: IwlsStation, code: string, from: number, to: number) {
-  const out: Sample[] = [];
-  for (let t = from; t < to; t += 7 * DAY) {
-    const chunkEnd = Math.min(t + 7 * DAY, to);
-    const query = new URLSearchParams({
-      "time-series-code": code,
-      from: iso(t),
-      to: iso(chunkEnd),
-      ...(code === "wlp" ? { resolution: "FIFTEEN_MINUTES" } : {}),
-    });
-    const rows: { eventDate: string; value: number }[] = await fetchIwls(
-      `stations/${station.id}/data?${query}`,
-      `${station.code}-${code}-${iso(t).slice(0, 10)}`,
-    );
-    for (const row of rows) {
-      const time = new Date(row.eventDate).getTime();
-      if (out.at(-1)?.t !== time) out.push({ t: time, v: row.value });
-    }
+// The series the app fits: every chunk of the plan, the oldest chunk's extra
+// days included, boundary duplicates kept, ending at the port's local midnight.
+async function fitInputs(station: IwlsStation) {
+  const { timeZoneCode } = await cached(
+    `${station.id}-metadata`,
+    () => iwls.metadata(station.id),
+    (metadata) => metadata.timeZoneCode !== undefined,
+  );
+  if (!timeZoneCode) throw new Error("no time zone");
+  const fitEnd = localMidnight(anchor, timeZoneCode).getTime();
+  const grid: Sample[] = [];
+  for (const chunk of chunkPlan(chsTideFit.days, new Date(fitEnd))) {
+    grid.push(...(await wlp(station, chunk)));
   }
-  return out;
+  grid.sort((a, b) => a.t - b.t);
+  return { fitEnd, grid };
 }
 
-async function fetchIwls(path: string, cacheKey: string) {
-  const filePath = `./.test-cache/chs-fit-${cacheKey}.json`;
+function reason(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// `wlp` on the fit grid, through the contract client.
+function wlp(station: IwlsStation, chunk: Chunk) {
+  return cached(
+    `${station.id}-wlp-${chunk.start / 1000}-${chunk.end / 1000}`,
+    () => iwls.series("wlp", station.id, chunk),
+    (samples) => samples.length > 0,
+  );
+}
+
+// wlp-hilo is a scoring input, not a fit series, so it skips the contract's
+// grid filter (its events fall between grid points) but keeps its pacing and retries.
+function hiloEvents(station: IwlsStation, chunk: Chunk) {
+  const url = new URL(`${BASE}/stations/${pathComponent(station.id)}/data`);
+  url.search = new URLSearchParams({
+    "time-series-code": "wlp-hilo",
+    from: new Date(chunk.start).toISOString().replace(/\.\d{3}Z$/, "Z"),
+    to: new Date(chunk.end).toISOString().replace(/\.\d{3}Z$/, "Z"),
+  }).toString();
+  return cached(
+    `${station.id}-wlp-hilo-${chunk.start / 1000}-${chunk.end / 1000}`,
+    async () => {
+      const raw = await iwls.get(url);
+      // decode() skips dates it cannot read; for scoring, a lost event is an error, not a gap.
+      const unreadable = Array.isArray(raw)
+        ? raw.filter((row) => parseEventDate(String(row?.eventDate)) === undefined).length
+        : 0;
+      if (unreadable) throw new Error(`${unreadable} wlp-hilo events with unreadable dates`);
+      return decode(raw);
+    },
+    (events) => events.length > 0,
+  );
+}
+
+// The run's own cache, keyed with both chunk ends so a partial week is never
+// mistaken for a full one. Empty responses are fetched again next run.
+async function cached<T>(
+  key: string,
+  load: () => Promise<T>,
+  keep: (value: T) => boolean = () => true,
+) {
+  const filePath = `./.test-cache/chs-fit-${key}.json`;
   try {
-    return await readFile(filePath, "utf-8").then((data) => JSON.parse(data));
+    return JSON.parse(await readFile(filePath, "utf-8")) as T;
   } catch {
-    const res = await fetchWithBackoff(`${IWLS}/${path}`);
-    const data = await res.json();
-    await writeFile(filePath, JSON.stringify(data));
-    return data;
+    const value = await load();
+    if (keep(value)) await writeFile(filePath, JSON.stringify(value));
+    return value;
   }
-}
-
-// IWLS rate-limits long runs partway through; back off and carry on rather
-// than lose the run. Requests are spaced like the apps space theirs.
-async function fetchWithBackoff(url: string) {
-  for (let attempt = 0; attempt < 6; attempt++) {
-    const res = await fetch(url);
-    await sleep(1000);
-    if (res.ok) return res;
-    if (res.status !== 429 && res.status < 500) throw new Error(`IWLS ${res.status} for ${url}`);
-    await sleep(5000 * 2 ** attempt);
-  }
-  throw new Error(`IWLS still failing after 6 attempts for ${url}`);
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function iso(ms: number) {
-  return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
 function mean(data: number[]) {

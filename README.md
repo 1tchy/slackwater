@@ -274,7 +274,7 @@ Slackwater reproduces high and low tide timing with **sub-minute accuracy** and 
 
 ### Fitted CHS tide ports
 
-Canadian Hydrographic Service ports have no redistributable constants, so clients fit them on device from CHS's own predictions with `chsTideFit`. `benchmarks/chs-fit.ts` scores that recipe monthly on 64 ports at held-out weeks 28 to 270 days out. On the first run, about half the ports met the [accuracy bar](docs/validation/chs-tides.md) at the first held-out week, and the median held-out RMSE was 4–8 cm. Most misses come from the seasonal mean level, which a 60-day fit cannot carry ([#428](https://github.com/openwatersio/slackwater/issues/428)).
+Canadian Hydrographic Service ports have no redistributable constants, so clients fit them on device from CHS's own predictions with `chsTideFit`. `benchmarks/chs-fit.ts` scores that recipe monthly on 64 ports at held-out weeks 28 to 270 days out. On the run recorded in the [validation record](docs/validation/chs-tides.md), fitted from the samples a device fetches, about half the ports met the accuracy bar at the first held-out week, and the median held-out RMSE was 5–8 cm. Most misses come from the seasonal mean level, which a 60-day fit cannot carry ([#428](https://github.com/openwatersio/slackwater/issues/428)).
 
 ### Fitted CHS current gates
 
