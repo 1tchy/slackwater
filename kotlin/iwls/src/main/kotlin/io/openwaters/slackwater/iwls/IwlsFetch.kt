@@ -1,9 +1,13 @@
 package io.openwaters.slackwater.iwls
 
+import java.net.URL
+import java.net.URLEncoder
+import java.time.Duration
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeParseException
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.math.asin
 import kotlin.math.cos
@@ -105,6 +109,46 @@ object IwlsFetch {
     fun decodeMetadata(json: String): IwlsMetadata {
         val metadata = Json.parseToJsonElement(json).jsonObject
         return IwlsMetadata(metadata.optionalNumber("floodDirection"), metadata.optionalNumber("ebbDirection"))
+    }
+
+    /** The series a fit reads; the grid filter would empty event series such as wlp-hilo. */
+    val FIT_SERIES: Set<String> = setOf("wlp", "wcsp1", "wcdp1")
+
+    val stationsUrl: URL get() = URL("$BASE/stations")
+
+    fun dataUrl(code: String, stationId: String, chunk: ChsChunk): URL {
+        if (stationId.isEmpty() || code !in FIT_SERIES || chunk.end < chunk.start ||
+            Duration.between(chunk.start, chunk.end) > Duration.ofSeconds(WEEK_SECONDS)
+        ) {
+            throw IwlsException.Permanent("invalid IWLS series request")
+        }
+        val query = listOf(
+            "time-series-code" to code,
+            "from" to wholeSeconds(chunk.start),
+            "to" to wholeSeconds(chunk.end),
+            "resolution" to "FIFTEEN_MINUTES",
+        ).joinToString("&") { (key, value) -> "$key=${URLEncoder.encode(value, "UTF-8")}" }
+        return URL("$BASE/stations/${pathComponent(stationId)}/data?$query")
+    }
+
+    fun metadataUrl(stationId: String): URL {
+        if (stationId.isEmpty()) throw IwlsException.Permanent("invalid IWLS station id")
+        return URL("$BASE/stations/${pathComponent(stationId)}/metadata")
+    }
+
+    private fun wholeSeconds(instant: Instant): String = instant.truncatedTo(ChronoUnit.SECONDS).toString()
+
+    // One path component: `/`, `%`, `?` and `#` escaped and the other sub-delimiters kept, as
+    // Swift's `urlPathAllowed` minus those four.
+    private const val PATH_KEPT = "-._~!\$&'()*+,;=:@"
+
+    private fun pathComponent(id: String): String = buildString {
+        for (byte in id.toByteArray(Charsets.UTF_8)) {
+            val code = byte.toInt() and 0xff
+            val char = code.toChar()
+            if (char in 'A'..'Z' || char in 'a'..'z' || char in '0'..'9' || char in PATH_KEPT) append(char)
+            else append(String.format(Locale.ROOT, "%%%02X", code))
+        }
     }
 
     private fun distanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
