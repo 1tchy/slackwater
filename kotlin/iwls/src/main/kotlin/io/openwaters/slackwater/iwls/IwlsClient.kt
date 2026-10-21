@@ -78,7 +78,7 @@ class IwlsClient internal constructor(
         }
     }
 
-    // Only IWLS's own answer (a client error, an unreadable body) is permanent. A transport failure
+    // IWLS answers (client errors, unreadable bodies) and local response-size limits are permanent. A transport failure
     // the client did not retry, a TLS one among them, can still succeed later: behind a captive
     // portal, after a clock is corrected, or once a stack's own idea of "offline" passes.
     private fun wrap(error: Throwable): IwlsException =

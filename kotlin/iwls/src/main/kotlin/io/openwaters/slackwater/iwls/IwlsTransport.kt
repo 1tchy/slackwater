@@ -9,6 +9,7 @@ import java.net.HttpURLConnection
 import java.net.ProtocolException
 import java.net.SocketTimeoutException
 import java.net.URL
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.SynchronousQueue
@@ -38,8 +39,9 @@ fun interface IwlsTransport {
  * ends the wait at once.
  *
  * HttpURLConnection blocks, and disconnect can wait on the reader's lock. Attempts and disconnects
- * share eight workers with no queue; overload fails as transient I/O rather than retaining more
- * threads or pending work. An abandoned worker stops at its next read or its 15-second idle timeout.
+ * use separate bounded pools: eight request workers with no queue and two cleanup workers with
+ * at most eight pending disconnects. Cleanup can release a saturated request pool even while
+ * response headers trickle in and prevent the 15-second idle timeout.
  */
 class HttpUrlConnectionTransport(private val timeoutMillis: Long = 300_000) : IwlsTransport {
     init {
@@ -65,9 +67,9 @@ class HttpUrlConnectionTransport(private val timeoutMillis: Long = 300_000) : Iw
             if (running.get()) {
                 abandoned.set(true)
                 try {
-                    threads.execute { connection.disconnect() }
+                    cleanupThreads.execute { connection.disconnect() }
                 } catch (_: RejectedExecutionException) {
-                    // All workers are occupied; the read timeout still releases the connection.
+                    // If cleanup also saturates, body reads observe abandonment; header reads rely on network idle.
                 }
             }
         }
@@ -77,12 +79,14 @@ class HttpUrlConnectionTransport(private val timeoutMillis: Long = 300_000) : Iw
         try {
             connection.connectTimeout = minOf(timeoutMillis, 15_000).toInt()
             connection.readTimeout = minOf(timeoutMillis, 15_000).toInt()
+            // Android's transparent gzip removes framing headers needed to classify truncated bodies.
+            connection.setRequestProperty("Accept-Encoding", "identity")
             val status = connection.responseCode
             // -1 is HttpURLConnection's answer to a reply that is not HTTP: an invalid server response.
             if (status < 0) throw ProtocolException("IWLS sent a response that is not HTTP")
             val retryAfter = connection.getHeaderField("Retry-After")
             val length = connection.contentLengthLong
-            if (status == 200 && length > MAX_BODY_BYTES) throw IOException("IWLS response exceeds $MAX_BODY_BYTES bytes")
+            if (status == 200 && length > MAX_BODY_BYTES) throw IwlsException.Permanent("IWLS response exceeds $MAX_BODY_BYTES bytes")
             val bytes = if (status == 200) readBody(connection.inputStream, abandoned) else null
             // The JDK ends a body cut short of its Content-Length as if it were complete; it is a lost link.
             if (bytes != null && length >= 0 && bytes.size.toLong() != length) {
@@ -106,13 +110,16 @@ class HttpUrlConnectionTransport(private val timeoutMillis: Long = 300_000) : Iw
             if (abandoned.get()) throw InterruptedIOException("IWLS attempt abandoned")
             val count = stream.read(buffer)
             if (count < 0) return body.toByteArray()
-            if (count > MAX_BODY_BYTES - body.size()) throw IOException("IWLS response exceeds $MAX_BODY_BYTES bytes")
+            if (count > MAX_BODY_BYTES - body.size()) throw IwlsException.Permanent("IWLS response exceeds $MAX_BODY_BYTES bytes")
             body.write(buffer, 0, count)
         }
     }
 
     private companion object {
         const val MAX_BODY_BYTES = 8 * 1024 * 1024
+        val cleanupThreads = ThreadPoolExecutor(2, 2, 60, TimeUnit.SECONDS, ArrayBlockingQueue(8)) { task ->
+            Thread(task, "iwls-disconnect").apply { isDaemon = true }
+        }.apply { allowCoreThreadTimeOut(true) }
         val threads = ThreadPoolExecutor(0, 8, 60, TimeUnit.SECONDS, SynchronousQueue()) { task ->
             Thread(task, "iwls-http").apply { isDaemon = true }
         }

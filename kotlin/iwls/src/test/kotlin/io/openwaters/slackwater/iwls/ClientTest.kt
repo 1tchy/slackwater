@@ -66,6 +66,13 @@ class ClientTest {
         assertEquals(emptyList(), tls.delays)
     }
 
+    @Test fun aPermanentTransportLimitDoesNotRetry() = runTest {
+        val limit = IwlsException.Permanent("IWLS response exceeds the body limit")
+        val server = FakeServer(limit)
+        assertSame(limit, assertFailsWith<IwlsException.Permanent> { server.client().stationList() })
+        assertEquals(emptyList(), server.delays)
+    }
+
     @Test fun onlyIwlsItselfMakesAFailurePermanent() = runTest {
         // Another HTTP stack can report being offline as something other than an IOException.
         val offline = FakeServer(java.nio.channels.UnresolvedAddressException())

@@ -360,6 +360,7 @@ describe("the client", () => {
   test("bounds the default fetch and forwards caller cancellation", async () => {
     const request = vi.fn(async () => new Response("[]"));
     vi.stubGlobal("fetch", request);
+    const deadlines = vi.spyOn(AbortSignal, "timeout");
     try {
       const client = createClient({ pacer: new Pacer(0) });
       expect(await client.stationList()).toEqual([]);
@@ -367,9 +368,13 @@ describe("the client", () => {
       expect(await client.stationList(controller.signal)).toEqual([]);
       const options = request.mock.calls as unknown as [URL, { signal: AbortSignal }][];
       expect(options[0][1].signal.aborted).toBe(false);
+      expect(deadlines).toHaveBeenCalledTimes(2);
+      expect(deadlines).toHaveBeenNthCalledWith(1, 300_000);
+      expect(deadlines).toHaveBeenNthCalledWith(2, 300_000);
       controller.abort();
       expect(options[1][1].signal.aborted).toBe(true);
     } finally {
+      deadlines.mockRestore();
       vi.unstubAllGlobals();
     }
   });

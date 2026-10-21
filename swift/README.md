@@ -6,7 +6,7 @@ Tide prediction is deterministic astronomy, not a live feed. Given a station's h
 constituents you can compute heights and the high/low turns for any minute, years ahead,
 with **zero network**. The `SlackwaterKit` product is a pure-Swift harmonic engine that does exactly that.
 
-The separate [`SlackwaterIWLS`](Sources/SlackwaterIWLS) product fetches CHS inputs directly on a user's device. It follows the shared [fetching contract](../docs/iwls-fetch.md) and has no dependency on the prediction engine. Pass `IwlsSampleGrid(sampleMinutes: ChsTideFit.sampleMinutes)` (or `ChsCurrentFit.sampleMinutes` for currents) to the client's `series` call. Supported steps are 1, 3, 5, 15, and 60 minutes; the default is 15. `IwlsChunkCacheEntry` validates full-week endpoints and grid identity, keeps complete weeks indefinitely, and expires successfully empty weeks after 24 hours. The application owns persistence and eviction.
+The separate [`SlackwaterIWLS`](Sources/SlackwaterIWLS) product fetches CHS inputs directly on a user's device. It follows the shared [fetching contract](../docs/iwls-fetch.md) and has no dependency on the prediction engine. Pass `try IwlsSampleGrid(sampleMinutes: ChsTideFit.sampleMinutes)` (or `ChsCurrentFit.sampleMinutes` for currents) to the client's `series` call. Supported steps are 1, 3, 5, 15, and 60 minutes; the default is 15. `IwlsChunkCacheEntry` validates full-week endpoints and grid identity, keeps complete weeks indefinitely, and expires successfully empty weeks after 24 hours. The application owns persistence and eviction.
 
 **It's all open — the engine MIT, the app GPL v3.** If you sail somewhere our numbers are
 off, read the code, check it against your home waters, and send a fix.

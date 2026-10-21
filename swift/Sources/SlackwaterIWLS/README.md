@@ -13,13 +13,15 @@ let station = try IwlsFetch.resolve(
     series: "wlp", in: stations)
 let end = IwlsFetch.localMidnight(
     now: Date(), timeZone: TimeZone(identifier: "America/Vancouver")!)
+// Supply the sample step from your fitting recipe.
+let grid = try IwlsSampleGrid(sampleMinutes: 15)
 var samples: [ChsSample] = []
 for chunk in IwlsFetch.chunkPlan(days: 60, end: end) {
-    samples += try await client.series("wlp", stationID: station.id, chunk: chunk)
+    samples += try await client.series("wlp", stationID: station.id, chunk: chunk, grid: grid)
 }
 samples.sort { $0.t < $1.t }
 ```
 
-The caller owns cache storage, queueing, and fitting. Use `ChsChunk.canCache(_:)` before storing a fetched chunk, which refuses partial weeks and empty responses, and `IwlsFetch.onGrid` when loading cached samples. Preserve repeated timestamps when concatenating responses. `IwlsClient.metadata(stationID:)` retrieves current flood/ebb axes. The optional request observer receives elapsed seconds for each attempt, including pacing, so an application can track download estimates. A supplied `URLSession` owns its connectivity and timeout settings.
+The caller owns cache storage, queueing, and fitting. Pass the fitting recipe’s sample step through `IwlsSampleGrid` to request resolution, filtering, and cache validation. Supported steps are 1, 3, 5, 15, and 60 minutes. `IwlsChunkCacheEntry(chunk:samples:grid:fetchedAt:)` accepts complete epoch weeks with both exact endpoints for permanent caching and empty filtered weeks for 24 hours. Persist the entry with its station ID and series, then check `isReusable(for:grid:now:)` on every hit. Different sample steps have separate identities. `ChsChunk.canCache(_:grid:)` tests permanent eligibility only; it rejects empty samples. Preserve repeated timestamps when concatenating responses. `IwlsClient.metadata(stationID:)` retrieves current flood/ebb axes. The optional request observer receives elapsed seconds for each attempt, including pacing, so an application can track download estimates. A supplied `URLSession` owns its connectivity and timeout settings.
 
 This client is for direct fetching on a user's device. It grants no right to redistribute CHS predictions through an API or CLI. The fixtures use synthetic values. See [LICENSE](LICENSE) for the module's MIT license and [the contract](../../../docs/iwls-fetch.md) for decoding, retries, and compatibility tests.
