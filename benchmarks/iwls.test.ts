@@ -1,10 +1,13 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   IwlsError,
   Pacer,
   canCache,
+  cacheEntry,
+  isReusable,
+  resolutionFor,
   chunkPlan,
   createClient,
   dataURL,
@@ -26,7 +29,7 @@ const fixture = JSON.parse(
 
 describe("the shared IWLS fetching contract", () => {
   test("is the version this implementation follows", () => {
-    expect(fixture.version).toBe(1);
+    expect(fixture.version).toBe(2);
   });
 
   test("resolves by position and series, never by name", () => {
@@ -66,7 +69,12 @@ describe("the shared IWLS fetching contract", () => {
 
   test("caches only full, non-empty weeks", () => {
     const week = { start: 0, end: 604_800_000 };
-    expect(canCache(week, [{ t: 0, v: 1 }])).toBe(true);
+    expect(
+      canCache(week, [
+        { t: 0, v: 1 },
+        { t: 604_800_000, v: 1 },
+      ]),
+    ).toBe(true);
     expect(canCache(week, [])).toBe(false);
     expect(canCache({ start: 0, end: 900_000 }, [{ t: 0, v: 1 }])).toBe(false);
   });
@@ -349,6 +357,23 @@ describe("the client", () => {
     expect(requests).toBe(1);
   });
 
+  test("bounds the default fetch and forwards caller cancellation", async () => {
+    const request = vi.fn(async () => new Response("[]"));
+    vi.stubGlobal("fetch", request);
+    try {
+      const client = createClient({ pacer: new Pacer(0) });
+      expect(await client.stationList()).toEqual([]);
+      const controller = new AbortController();
+      expect(await client.stationList(controller.signal)).toEqual([]);
+      const options = request.mock.calls as unknown as [URL, { signal: AbortSignal }][];
+      expect(options[0][1].signal.aborted).toBe(false);
+      controller.abort();
+      expect(options[1][1].signal.aborted).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("shares one pacer between default clients", () => {
     expect(createClient().pacer).toBe(pacer);
     expect(createClient({ fetch: async () => new Response("[]") }).pacer).toBe(pacer);
@@ -384,3 +409,71 @@ function fakeServer(
   });
   return { client, urls, delays };
 }
+
+describe("cache and recipe grid contract", () => {
+  test("uses every supported recipe resolution and rejects unsupported steps", () => {
+    for (const row of fixture.sampleGrids) {
+      expect(resolutionFor(row.minutes)).toBe(row.resolution);
+      expect(onGrid(row.input, row.minutes)).toEqual(row.expected);
+      expect(
+        dataURL("wlp", "resolved", { start: 0, end: 900_000 }, row.minutes).searchParams.get(
+          "resolution",
+        ),
+      ).toBe(row.resolution);
+    }
+    for (const minutes of fixture.unsupportedSampleMinutes) {
+      expect(() => resolutionFor(minutes)).toThrow(IwlsError);
+      expect(() => onGrid([], minutes)).toThrow(IwlsError);
+    }
+  });
+
+  test("shares endpoint validation, negative expiry, and step identity", () => {
+    for (const row of fixture.chunkCache) {
+      const chunk = { start: row.startMs, end: row.endMs };
+      expect(canCache(chunk, row.samples, row.storedSampleMinutes), row.name).toBe(row.canCache);
+      const entry = cacheEntry(chunk, row.samples, row.storedSampleMinutes, row.fetchedAtMs);
+      expect(entry !== undefined, row.name).toBe(row.canCreate);
+      expect(
+        entry !== undefined && isReusable(entry, chunk, row.sampleMinutes, row.nowMs),
+        row.name,
+      ).toBe(row.reusable);
+    }
+  });
+
+  test("requests and filters the consumer recipe grid", async () => {
+    const server = fakeServer([200], {
+      body: [
+        { eventDate: "1970-01-01T00:01:00Z", value: 1 },
+        { eventDate: "1970-01-01T00:05:00Z", value: 2 },
+      ],
+    });
+    expect(
+      await server.client.series("wlp", "id", { start: 0, end: 900_000 }, undefined, 5),
+    ).toEqual([{ t: 300_000, v: 2 }]);
+    expect(new URL(server.urls[0]).searchParams.get("resolution")).toBe("FIVE_MINUTES");
+    await expect(
+      server.client.series("wlp", "id", { start: 0, end: 900_000 }, undefined, 2),
+    ).rejects.toThrow(IwlsError);
+    expect(server.urls).toHaveLength(1);
+  });
+
+  test("cached metadata cannot promote an incomplete week or a different identity", () => {
+    const chunk = { start: 0, end: 604_800_000 };
+    const entry = cacheEntry(
+      chunk,
+      [
+        { t: 0, v: 1 },
+        { t: chunk.end, v: 1 },
+      ],
+      15,
+      0,
+    )!;
+    expect(isReusable({ ...entry, samples: [{ t: 0, v: 1 }] }, chunk, 15, 1)).toBe(false);
+    expect(isReusable(entry, { start: chunk.end, end: chunk.end * 2 }, 15, 1)).toBe(false);
+    expect(cacheEntry(chunk, [{ t: 0, v: Number.NaN }], 15, 0)).toBeUndefined();
+    expect(cacheEntry(chunk, [], 15, Number.NaN)).toBeUndefined();
+    expect(isReusable({ ...entry, fetchedAtMs: Number.NaN }, chunk, 15, 1)).toBe(false);
+    expect(isReusable({ ...entry, endMs: 1 }, chunk, 15, 1)).toBe(false);
+    expect(isReusable({ ...entry, startMs: 1, endMs: 2 }, { start: 1, end: 2 }, 15, 1)).toBe(false);
+  });
+});

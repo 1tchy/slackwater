@@ -1,5 +1,6 @@
 package io.openwaters.slackwater.iwls
 
+import java.time.Duration
 import java.time.Instant
 
 internal const val WEEK_SECONDS = 604_800L
@@ -14,8 +15,54 @@ data class ChsChunk(val start: Instant, val end: Instant) {
         get() = start.nano == 0 && Math.floorMod(start.epochSecond, WEEK_SECONDS) == 0L &&
             end == start.plusSeconds(WEEK_SECONDS)
 
-    /** A full week's identity never changes, so an empty response kept under it would be a missing week for good. */
-    fun canCache(samples: List<ChsSample>): Boolean = isCacheable && samples.isNotEmpty()
+    /** Only a whole, bounded week can be kept permanently; interior gaps are allowed. */
+    fun canCache(samples: List<ChsSample>, grid: IwlsSampleGrid = IwlsSampleGrid.fifteenMinutes): Boolean =
+        isCacheable && samples.isNotEmpty() &&
+            samples.any { it.tMillis == start.toEpochMilli() } && samples.any { it.tMillis == end.toEpochMilli() } &&
+            samples.all { it.value.isFinite() && it.tMillis % grid.millis == 0L &&
+                it.tMillis >= start.toEpochMilli() && it.tMillis <= end.toEpochMilli() }
+}
+
+/** Provider resolutions supported by fit-series requests. */
+data class IwlsSampleGrid(val sampleMinutes: Int) {
+    val resolution: String = when (sampleMinutes) {
+        1 -> "ONE_MINUTE"
+        3 -> "THREE_MINUTES"
+        5 -> "FIVE_MINUTES"
+        15 -> "FIFTEEN_MINUTES"
+        60 -> "SIXTY_MINUTES"
+        else -> throw IwlsException.Permanent("unsupported IWLS sample interval: $sampleMinutes")
+    }
+    internal val millis: Long get() = sampleMinutes * 60_000L
+
+    companion object {
+        val fifteenMinutes = IwlsSampleGrid(15)
+    }
+}
+
+/** A persisted chunk with enough identity and receipt time to validate reuse. */
+data class IwlsChunkCacheEntry(
+    val startMs: Long,
+    val endMs: Long,
+    val sampleMinutes: Int,
+    val fetchedAtMs: Long,
+    val samples: List<ChsSample>,
+) {
+    fun isReusable(chunk: ChsChunk, grid: IwlsSampleGrid = IwlsSampleGrid.fifteenMinutes, now: Instant): Boolean {
+        if (startMs != chunk.start.toEpochMilli() || endMs != chunk.end.toEpochMilli() || sampleMinutes != grid.sampleMinutes || !chunk.isCacheable) return false
+        if (samples.isNotEmpty()) return chunk.canCache(samples, grid)
+        val age = Duration.between(Instant.ofEpochMilli(fetchedAtMs), now)
+        return !age.isNegative && age < Duration.ofSeconds(emptyLifetimeSeconds)
+    }
+
+    companion object {
+        const val emptyLifetimeSeconds = 86_400L
+
+        fun create(chunk: ChsChunk, samples: List<ChsSample>, grid: IwlsSampleGrid = IwlsSampleGrid.fifteenMinutes, fetchedAt: Instant): IwlsChunkCacheEntry? {
+            if (!chunk.isCacheable || (samples.isNotEmpty() && !chunk.canCache(samples, grid))) return null
+            return IwlsChunkCacheEntry(chunk.start.toEpochMilli(), chunk.end.toEpochMilli(), grid.sampleMinutes, fetchedAt.toEpochMilli(), samples)
+        }
+    }
 }
 
 data class IwlsStation(

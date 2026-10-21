@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "provenance": "Synthetic inputs and values; no CHS predictions.",
   "resolution": [
     {
@@ -580,7 +580,7 @@
     {
       "status": 429,
       "attempt": 1,
-      "retryAfter": 1e30,
+      "retryAfter": 1e+30,
       "delay": 600
     },
     {
@@ -609,13 +609,654 @@
     }
   ],
   "pathComponents": [
-    { "id": "resolved-id", "encoded": "resolved-id" },
-    { "id": "id/path?bad=2#x%", "encoded": "id%2Fpath%3Fbad=2%23x%25" },
-    { "id": "a:b@c!$&'()*+,;=-._~", "encoded": "a:b@c!$&'()*+,;=-._~" },
-    { "id": "a.b", "encoded": "a.b" },
-    { "id": ".", "encoded": null },
-    { "id": "..", "encoded": null },
-    { "id": "", "encoded": null },
-    { "id": "ét e", "encoded": "%C3%A9t%20e" }
+    {
+      "id": "resolved-id",
+      "encoded": "resolved-id"
+    },
+    {
+      "id": "id/path?bad=2#x%",
+      "encoded": "id%2Fpath%3Fbad=2%23x%25"
+    },
+    {
+      "id": "a:b@c!$&'()*+,;=-._~",
+      "encoded": "a:b@c!$&'()*+,;=-._~"
+    },
+    {
+      "id": "a.b",
+      "encoded": "a.b"
+    },
+    {
+      "id": ".",
+      "encoded": null
+    },
+    {
+      "id": "..",
+      "encoded": null
+    },
+    {
+      "id": "",
+      "encoded": null
+    },
+    {
+      "id": "\u00e9t e",
+      "encoded": "%C3%A9t%20e"
+    }
+  ],
+  "sampleGrids": [
+    {
+      "minutes": 1,
+      "resolution": "ONE_MINUTE",
+      "input": [
+        {
+          "t": -900000,
+          "v": 1
+        },
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 60000,
+          "v": 1
+        },
+        {
+          "t": 180000,
+          "v": 1
+        },
+        {
+          "t": 300000,
+          "v": 1
+        },
+        {
+          "t": 900000,
+          "v": 1
+        },
+        {
+          "t": 3600000,
+          "v": 1
+        }
+      ],
+      "expected": [
+        {
+          "t": -900000,
+          "v": 1
+        },
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 60000,
+          "v": 1
+        },
+        {
+          "t": 180000,
+          "v": 1
+        },
+        {
+          "t": 300000,
+          "v": 1
+        },
+        {
+          "t": 900000,
+          "v": 1
+        },
+        {
+          "t": 3600000,
+          "v": 1
+        }
+      ]
+    },
+    {
+      "minutes": 3,
+      "resolution": "THREE_MINUTES",
+      "input": [
+        {
+          "t": -900000,
+          "v": 1
+        },
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 60000,
+          "v": 1
+        },
+        {
+          "t": 180000,
+          "v": 1
+        },
+        {
+          "t": 300000,
+          "v": 1
+        },
+        {
+          "t": 900000,
+          "v": 1
+        },
+        {
+          "t": 3600000,
+          "v": 1
+        }
+      ],
+      "expected": [
+        {
+          "t": -900000,
+          "v": 1
+        },
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 180000,
+          "v": 1
+        },
+        {
+          "t": 900000,
+          "v": 1
+        },
+        {
+          "t": 3600000,
+          "v": 1
+        }
+      ]
+    },
+    {
+      "minutes": 5,
+      "resolution": "FIVE_MINUTES",
+      "input": [
+        {
+          "t": -900000,
+          "v": 1
+        },
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 60000,
+          "v": 1
+        },
+        {
+          "t": 180000,
+          "v": 1
+        },
+        {
+          "t": 300000,
+          "v": 1
+        },
+        {
+          "t": 900000,
+          "v": 1
+        },
+        {
+          "t": 3600000,
+          "v": 1
+        }
+      ],
+      "expected": [
+        {
+          "t": -900000,
+          "v": 1
+        },
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 300000,
+          "v": 1
+        },
+        {
+          "t": 900000,
+          "v": 1
+        },
+        {
+          "t": 3600000,
+          "v": 1
+        }
+      ]
+    },
+    {
+      "minutes": 15,
+      "resolution": "FIFTEEN_MINUTES",
+      "input": [
+        {
+          "t": -900000,
+          "v": 1
+        },
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 60000,
+          "v": 1
+        },
+        {
+          "t": 180000,
+          "v": 1
+        },
+        {
+          "t": 300000,
+          "v": 1
+        },
+        {
+          "t": 900000,
+          "v": 1
+        },
+        {
+          "t": 3600000,
+          "v": 1
+        }
+      ],
+      "expected": [
+        {
+          "t": -900000,
+          "v": 1
+        },
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 900000,
+          "v": 1
+        },
+        {
+          "t": 3600000,
+          "v": 1
+        }
+      ]
+    },
+    {
+      "minutes": 60,
+      "resolution": "SIXTY_MINUTES",
+      "input": [
+        {
+          "t": -900000,
+          "v": 1
+        },
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 60000,
+          "v": 1
+        },
+        {
+          "t": 180000,
+          "v": 1
+        },
+        {
+          "t": 300000,
+          "v": 1
+        },
+        {
+          "t": 900000,
+          "v": 1
+        },
+        {
+          "t": 3600000,
+          "v": 1
+        }
+      ],
+      "expected": [
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 3600000,
+          "v": 1
+        }
+      ]
+    }
+  ],
+  "unsupportedSampleMinutes": [
+    -1,
+    0,
+    2,
+    6,
+    10,
+    30,
+    1440
+  ],
+  "chunkCache": [
+    {
+      "startMs": 0,
+      "endMs": 604800000,
+      "sampleMinutes": 15,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 1000000000,
+      "name": "complete-endpoints-interior-gaps",
+      "samples": [
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 900000,
+          "v": 1
+        },
+        {
+          "t": 604800000,
+          "v": 1
+        }
+      ],
+      "canCache": true,
+      "canCreate": true,
+      "reusable": true
+    },
+    {
+      "startMs": 0,
+      "endMs": 604800000,
+      "sampleMinutes": 15,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 1000000000,
+      "name": "truncated-end",
+      "samples": [
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 900000,
+          "v": 1
+        }
+      ],
+      "canCache": false,
+      "canCreate": false,
+      "reusable": false
+    },
+    {
+      "startMs": 0,
+      "endMs": 604800000,
+      "sampleMinutes": 15,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 1000000000,
+      "name": "truncated-start",
+      "samples": [
+        {
+          "t": 900000,
+          "v": 1
+        },
+        {
+          "t": 604800000,
+          "v": 1
+        }
+      ],
+      "canCache": false,
+      "canCreate": false,
+      "reusable": false
+    },
+    {
+      "startMs": 0,
+      "endMs": 604800000,
+      "sampleMinutes": 15,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 1000000000,
+      "name": "both-edges-missing",
+      "samples": [
+        {
+          "t": 900000,
+          "v": 1
+        },
+        {
+          "t": 1800000,
+          "v": 1
+        }
+      ],
+      "canCache": false,
+      "canCreate": false,
+      "reusable": false
+    },
+    {
+      "startMs": 0,
+      "endMs": 604800000,
+      "sampleMinutes": 15,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 1000000000,
+      "name": "fresh-empty-week",
+      "samples": [],
+      "canCache": false,
+      "canCreate": true,
+      "reusable": true
+    },
+    {
+      "startMs": 0,
+      "endMs": 604800000,
+      "sampleMinutes": 15,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 1086399999,
+      "name": "empty-just-before-expiry",
+      "samples": [],
+      "canCache": false,
+      "canCreate": true,
+      "reusable": true
+    },
+    {
+      "startMs": 0,
+      "endMs": 604800000,
+      "sampleMinutes": 15,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 1086400000,
+      "name": "empty-at-expiry",
+      "samples": [],
+      "canCache": false,
+      "canCreate": true,
+      "reusable": false
+    },
+    {
+      "startMs": 0,
+      "endMs": 604800000,
+      "sampleMinutes": 15,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 999999999,
+      "name": "empty-clock-back",
+      "samples": [],
+      "canCache": false,
+      "canCreate": true,
+      "reusable": false
+    },
+    {
+      "startMs": 0,
+      "endMs": 604800000,
+      "sampleMinutes": 15,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 9999999999,
+      "name": "complete-does-not-expire",
+      "samples": [
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 604800000,
+          "v": 1
+        }
+      ],
+      "canCache": true,
+      "canCreate": true,
+      "reusable": true
+    },
+    {
+      "startMs": 0,
+      "endMs": 900000,
+      "sampleMinutes": 15,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 1000000000,
+      "name": "partial-week",
+      "samples": [
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 900000,
+          "v": 1
+        }
+      ],
+      "canCache": false,
+      "canCreate": false,
+      "reusable": false
+    },
+    {
+      "startMs": 1000,
+      "endMs": 604801000,
+      "sampleMinutes": 15,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 1000000000,
+      "name": "off-epoch-week",
+      "samples": [
+        {
+          "t": 1000,
+          "v": 1
+        },
+        {
+          "t": 604801000,
+          "v": 1
+        }
+      ],
+      "canCache": false,
+      "canCreate": false,
+      "reusable": false
+    },
+    {
+      "startMs": 0,
+      "endMs": 604800000,
+      "sampleMinutes": 15,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 1000000000,
+      "name": "off-grid-sample",
+      "samples": [
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 60000,
+          "v": 1
+        },
+        {
+          "t": 604800000,
+          "v": 1
+        }
+      ],
+      "canCache": false,
+      "canCreate": false,
+      "reusable": false
+    },
+    {
+      "startMs": 0,
+      "endMs": 604800000,
+      "sampleMinutes": 15,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 1000000000,
+      "name": "outside-request",
+      "samples": [
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 604800000,
+          "v": 1
+        },
+        {
+          "t": 605700000,
+          "v": 1
+        }
+      ],
+      "canCache": false,
+      "canCreate": false,
+      "reusable": false
+    },
+    {
+      "startMs": 0,
+      "endMs": 604800000,
+      "sampleMinutes": 15,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 1000000000,
+      "name": "unsorted-and-repeated-boundaries",
+      "samples": [
+        {
+          "t": 604800000,
+          "v": 1
+        },
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 0,
+          "v": 1
+        }
+      ],
+      "canCache": true,
+      "canCreate": true,
+      "reusable": true
+    },
+    {
+      "startMs": 0,
+      "endMs": 604800000,
+      "sampleMinutes": 5,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 1000000000,
+      "name": "finer-request-rejects-coarser-cache",
+      "samples": [
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 604800000,
+          "v": 1
+        }
+      ],
+      "canCache": true,
+      "canCreate": true,
+      "reusable": false
+    },
+    {
+      "startMs": 0,
+      "endMs": 604800000,
+      "sampleMinutes": 60,
+      "storedSampleMinutes": 15,
+      "fetchedAtMs": 1000000000,
+      "nowMs": 1000000000,
+      "name": "coarser-request-also-needs-own-identity",
+      "samples": [
+        {
+          "t": 0,
+          "v": 1
+        },
+        {
+          "t": 604800000,
+          "v": 1
+        }
+      ],
+      "canCache": true,
+      "canCreate": true,
+      "reusable": false
+    }
   ]
 }

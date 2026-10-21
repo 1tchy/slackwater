@@ -84,8 +84,6 @@ object IwlsFetch {
         )
     }
 
-    private const val GRID_MILLIS = 900_000L
-
     // Whole seconds with a UTC designator or numeric offset, with or without its colon, as Swift's
     // ISO8601DateFormatter reads them. Fractional seconds are skipped, as the contract says.
     private val EVENT_DATE = Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:?\d{2})""")
@@ -114,7 +112,8 @@ object IwlsFetch {
         return samples
     }
 
-    fun onGrid(samples: List<ChsSample>): List<ChsSample> = samples.filter { it.tMillis % GRID_MILLIS == 0L }
+    fun onGrid(samples: List<ChsSample>, grid: IwlsSampleGrid = IwlsSampleGrid.fifteenMinutes): List<ChsSample> =
+        samples.filter { it.tMillis % grid.millis == 0L }
 
     fun decodeMetadata(json: String): IwlsMetadata {
         val metadata = Json.parseToJsonElement(json).jsonObject
@@ -126,7 +125,7 @@ object IwlsFetch {
 
     val stationsUrl: URL get() = URL("$BASE/stations")
 
-    fun dataUrl(code: String, stationId: String, chunk: ChsChunk): URL {
+    fun dataUrl(code: String, stationId: String, chunk: ChsChunk, grid: IwlsSampleGrid = IwlsSampleGrid.fifteenMinutes): URL {
         if (stationId.isEmpty() || code !in FIT_SERIES || chunk.end < chunk.start ||
             Duration.between(chunk.start, chunk.end) > Duration.ofSeconds(WEEK_SECONDS)
         ) {
@@ -136,7 +135,7 @@ object IwlsFetch {
             "time-series-code" to code,
             "from" to wholeSeconds(chunk.start),
             "to" to wholeSeconds(chunk.end),
-            "resolution" to "FIFTEEN_MINUTES",
+            "resolution" to grid.resolution,
         ).joinToString("&") { (key, value) -> "$key=${URLEncoder.encode(value, "UTF-8")}" }
         return URL("$BASE/stations/${pathComponent(stationId)}/data?$query")
     }

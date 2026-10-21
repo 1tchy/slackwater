@@ -28,14 +28,6 @@ const __dirname = new URL(".", import.meta.url).pathname;
 const DAY = 86_400_000;
 const iwls = createClient();
 
-// The contract fetches and filters to a 15-minute grid; a recipe on another
-// grid would be fitted from samples it did not ask for.
-if (chsTideFit.sampleMinutes !== 15) {
-  throw new Error(
-    `chsTideFit.sampleMinutes is ${chsTideFit.sampleMinutes}; docs/iwls-fetch.md fixes the grid at 15`,
-  );
-}
-
 const FAST = !!process.env.FAST;
 // A model never expires on device, and its error follows the seasonal mean
 // level, so one held-out week understates it.
@@ -279,8 +271,8 @@ function reason(error: unknown) {
 // `wlp` on the fit grid, through the contract client.
 function wlp(station: IwlsStation, chunk: Chunk) {
   return cached(
-    `${station.id}-wlp-${chunk.start / 1000}-${chunk.end / 1000}`,
-    () => iwls.series("wlp", station.id, chunk),
+    `${station.id}-wlp-${chunk.start / 1000}-${chunk.end / 1000}-step${chsTideFit.sampleMinutes}m`,
+    () => iwls.series("wlp", station.id, chunk, undefined, chsTideFit.sampleMinutes),
     (samples) => samples.length > 0,
   );
 }

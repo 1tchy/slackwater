@@ -9,6 +9,7 @@ import kotlin.math.ceil
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.serialization.json.Json
 
 /** Fetches the contract's inputs for fitting on this device. Every call is cancellable. */
 class IwlsClient internal constructor(
@@ -27,9 +28,9 @@ class IwlsClient internal constructor(
     suspend fun metadata(stationId: String): IwlsMetadata =
         decoding(get(IwlsFetch.metadataUrl(stationId)), IwlsFetch::decodeMetadata)
 
-    /** One fit-series chunk on the 15-minute grid. */
-    suspend fun series(code: String, stationId: String, chunk: ChsChunk): List<ChsSample> =
-        IwlsFetch.onGrid(decoding(get(IwlsFetch.dataUrl(code, stationId, chunk)), IwlsFetch::decode))
+    /** One fit-series chunk on the selected recipe's grid. */
+    suspend fun series(code: String, stationId: String, chunk: ChsChunk, grid: IwlsSampleGrid = IwlsSampleGrid.fifteenMinutes): List<ChsSample> =
+        IwlsFetch.onGrid(decoding(get(IwlsFetch.dataUrl(code, stationId, chunk, grid)), IwlsFetch::decode), grid)
 
     // A body IWLS sent but nobody can read would be the same body next time.
     private fun <T> decoding(body: String, decode: (String) -> T): T = try {
@@ -56,8 +57,15 @@ class IwlsClient internal constructor(
             // Only a 200 supplies a body; decoding errors are not retried, but an empty response is.
             if (response != null && response.status == 200) {
                 val body = response.body
-                if (!body.isNullOrEmpty()) return body
-                failure = EOFException("IWLS sent an empty response")
+                if (!body.isNullOrEmpty()) {
+                    if (!response.closeDelimited) return body
+                    try {
+                        Json.parseToJsonElement(body)
+                        return body
+                    } catch (error: IllegalArgumentException) {
+                        failure = EOFException("IWLS sent a possibly truncated response").apply { initCause(error) }
+                    }
+                } else failure = EOFException("IWLS sent an empty response")
                 response = null
             }
             val outcome = if (response != null) Outcome.Status(response.status) else Outcome.Failure(failure!!)

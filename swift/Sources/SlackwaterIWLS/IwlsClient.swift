@@ -104,9 +104,9 @@ public struct IwlsClient: Sendable {
         try JSONDecoder().decode(Metadata.self, from: await get(IwlsFetch.metadataURL(stationID: stationID)))
     }
 
-    public func series(_ code: String, stationID: String, chunk: ChsChunk) async throws -> [ChsSample] {
-        let url = try IwlsFetch.dataURL(code, stationID: stationID, chunk: chunk)
-        return try IwlsFetch.onGrid(IwlsFetch.decode(await get(url)))
+    public func series(_ code: String, stationID: String, chunk: ChsChunk, grid: IwlsSampleGrid = .fifteenMinutes) async throws -> [ChsSample] {
+        let url = try IwlsFetch.dataURL(code, stationID: stationID, chunk: chunk, grid: grid)
+        return try IwlsFetch.onGrid(IwlsFetch.decode(await get(url)), grid: grid)
     }
 
     private func get(_ url: URL) async throws -> Data {

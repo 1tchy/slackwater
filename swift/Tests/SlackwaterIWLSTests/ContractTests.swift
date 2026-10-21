@@ -25,6 +25,18 @@ private struct Fixture: Decodable {
     }
     struct Retry: Decodable { let status: Int; let attempt: Int; let retryAfter: Double?; let delay: Double? }
     struct PathComponent: Decodable { let id: String; let encoded: String? }
+    struct SampleGrid: Decodable {
+        let minutes: Int; let resolution: String; let input: [ChsSample]; let expected: [ChsSample]
+    }
+    struct ChunkCache: Decodable {
+        let name: String; let startMs: Double; let endMs: Double
+        let sampleMinutes: Int; let storedSampleMinutes: Int
+        let fetchedAtMs: Double; let nowMs: Double; let samples: [ChsSample]
+        let canCache: Bool; let canCreate: Bool; let reusable: Bool
+    }
+    let sampleGrids: [SampleGrid]
+    let unsupportedSampleMinutes: [Int]
+    let chunkCache: [ChunkCache]
     let version: Int
     let resolution: [Resolution]
     let midnights: [Midnight]
@@ -46,7 +58,7 @@ private func fixture() throws -> Fixture {
 
 @Test func resolvesByPositionAndSeries() throws {
     let f = try fixture()
-    #expect(f.version == 1)
+    #expect(f.version == 2)
     for row in f.resolution {
         if let expected = row.expectedID {
             let station = try IwlsFetch.resolve(name: row.name, latitude: row.latitude,
@@ -82,7 +94,8 @@ private func fixture() throws -> Fixture {
     let tomorrow = IwlsFetch.chunkPlan(days: 210, end: end.addingTimeInterval(86400))
     #expect(Set(full.filter(\.isCacheable)).intersection(tomorrow.filter(\.isCacheable)).count >= 28)
     let week = try #require(full.first { $0.isCacheable })
-    #expect(week.canCache([ChsSample(t: week.start.timeIntervalSince1970 * 1000, v: 1)]))
+    #expect(week.canCache([ChsSample(t: week.start.timeIntervalSince1970 * 1000, v: 1),
+                           ChsSample(t: week.end.timeIntervalSince1970 * 1000, v: 1)]))
     #expect(!week.canCache([]), "an empty week must be fetched again")
     let partial = ChsChunk(start: .init(timeIntervalSince1970: 0), end: .init(timeIntervalSince1970: 900))
     #expect(!partial.canCache([ChsSample(t: 0, v: 1)]))
@@ -152,4 +165,70 @@ private func fixture() throws -> Fixture {
     #expect(IwlsFetch.terminalError(status: 404) == .permanent("HTTP 404"))
     #expect(IwlsFetch.terminalError(status: 429) == .transient("HTTP 429"))
     #expect(IwlsFetch.terminalError(status: 503) == .transient("HTTP 503"))
+}
+
+@Test func sampleGridsFollowSharedContract() throws {
+    let f = try fixture()
+    let chunk = ChsChunk(start: .init(timeIntervalSince1970: 0), end: .init(timeIntervalSince1970: 900))
+    for row in f.sampleGrids {
+        let grid = try IwlsSampleGrid(sampleMinutes: row.minutes)
+        #expect(grid.sampleMinutes == row.minutes)
+        #expect(grid.resolution == row.resolution)
+        #expect(IwlsFetch.onGrid(row.input, grid: grid) == row.expected)
+        let url = try IwlsFetch.dataURL("wlp", stationID: "station", chunk: chunk, grid: grid)
+        let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        #expect(components.queryItems?.first { $0.name == "resolution" }?.value == row.resolution)
+    }
+    for minutes in f.unsupportedSampleMinutes {
+        #expect(throws: IwlsError.self) { try IwlsSampleGrid(sampleMinutes: minutes) }
+    }
+    #expect(try IwlsSampleGrid(sampleMinutes: 15) == .fifteenMinutes)
+}
+
+@Test func chunkCacheFollowsSharedContract() throws {
+    for row in try fixture().chunkCache {
+        let chunk = ChsChunk(start: .init(timeIntervalSince1970: row.startMs / 1000),
+                             end: .init(timeIntervalSince1970: row.endMs / 1000))
+        let storedGrid = try IwlsSampleGrid(sampleMinutes: row.storedSampleMinutes)
+        let grid = try IwlsSampleGrid(sampleMinutes: row.sampleMinutes)
+        #expect(chunk.canCache(row.samples, grid: storedGrid) == row.canCache, "\(row.name)")
+        let entry = IwlsChunkCacheEntry(chunk: chunk, samples: row.samples, grid: storedGrid,
+                                         fetchedAt: .init(timeIntervalSince1970: row.fetchedAtMs / 1000))
+        #expect((entry != nil) == row.canCreate, "\(row.name)")
+        // Decode raw metadata too: a saved entry cannot promote an incomplete response.
+        let raw = try JSONSerialization.data(withJSONObject: [
+            "startMs": row.startMs, "endMs": row.endMs,
+            "sampleMinutes": row.storedSampleMinutes, "fetchedAtMs": row.fetchedAtMs,
+            "samples": row.samples.map { ["t": $0.t, "v": $0.v] }
+        ])
+        let decoded = try JSONDecoder().decode(IwlsChunkCacheEntry.self, from: raw)
+        #expect(decoded.isReusable(for: chunk, grid: grid,
+                                  now: .init(timeIntervalSince1970: row.nowMs / 1000)) == row.reusable, "\(row.name)")
+        if let entry {
+            #expect(entry.startMs == row.startMs)
+            #expect(entry.endMs == row.endMs)
+            #expect(entry.sampleMinutes == row.storedSampleMinutes)
+            #expect(entry.fetchedAtMs == row.fetchedAtMs)
+            #expect(entry.samples == row.samples)
+            let roundTrip = try JSONDecoder().decode(IwlsChunkCacheEntry.self, from: JSONEncoder().encode(entry))
+            #expect(roundTrip.isReusable(for: chunk, grid: grid,
+                                        now: .init(timeIntervalSince1970: row.nowMs / 1000)) == row.reusable)
+        }
+    }
+}
+
+@Test func chunkCacheRejectsNonfiniteDataAndWrongWindows() throws {
+    let chunk = ChsChunk(start: .init(timeIntervalSince1970: 0), end: .init(timeIntervalSince1970: 604800))
+    let endpoints = [ChsSample(t: 0, v: 1), ChsSample(t: 604800000, v: 1)]
+    let now = Date(timeIntervalSince1970: 1000000)
+    for invalid in [ChsSample(t: .nan, v: 1), ChsSample(t: .infinity, v: 1),
+                    ChsSample(t: 0, v: .nan), ChsSample(t: 0, v: .infinity)] {
+        #expect(!chunk.canCache(endpoints + [invalid]))
+        #expect(IwlsChunkCacheEntry(chunk: chunk, samples: endpoints + [invalid], fetchedAt: now) == nil)
+    }
+    let entry = try #require(IwlsChunkCacheEntry(chunk: chunk, samples: endpoints, fetchedAt: now))
+    let shifted = ChsChunk(start: .init(timeIntervalSince1970: 604800), end: .init(timeIntervalSince1970: 1209600))
+    #expect(!entry.isReusable(for: shifted, now: now))
+    #expect(IwlsChunkCacheEntry.emptyLifetimeSeconds == 86400)
+    #expect(IwlsChunkCacheEntry(chunk: chunk, samples: [], fetchedAt: .init(timeIntervalSince1970: .nan)) == nil)
 }
