@@ -262,3 +262,21 @@ private final class UnavailableProtocol: URLProtocol, @unchecked Sendable {
     await #expect(throws: CancellationError.self) { try await task.value }
     continuation.finish()
 }
+
+
+@Test func clientUsesTheRequestedGridForURLAndFiltering() async throws {
+    let server = Server([.success(200)], body: """
+        [{"eventDate":"1970-01-01T00:00:00Z","value":2},
+         {"eventDate":"1970-01-01T00:01:00Z","value":3},
+         {"eventDate":"1970-01-01T00:05:00Z","value":4}]
+        """)
+    let client = await server.client()
+    let grid = try IwlsSampleGrid(sampleMinutes: 5)
+    let samples = try await client.series("wlp", stationID: "resolved",
+        chunk: ChsChunk(start: .init(timeIntervalSince1970: 0), end: .init(timeIntervalSince1970: 900)), grid: grid)
+    #expect(samples == [ChsSample(t: 0, v: 2), ChsSample(t: 300000, v: 4)])
+    let (urls, _, _) = await server.snapshot()
+    let url = try #require(urls.first)
+    let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+    #expect(components.queryItems?.first { $0.name == "resolution" }?.value == "FIVE_MINUTES")
+}

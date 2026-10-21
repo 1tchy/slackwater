@@ -66,6 +66,13 @@ class ClientTest {
         assertEquals(emptyList(), tls.delays)
     }
 
+    @Test fun aPermanentTransportLimitDoesNotRetry() = runTest {
+        val limit = IwlsException.Permanent("IWLS response exceeds the body limit")
+        val server = FakeServer(limit)
+        assertSame(limit, assertFailsWith<IwlsException.Permanent> { server.client().stationList() })
+        assertEquals(emptyList(), server.delays)
+    }
+
     @Test fun onlyIwlsItselfMakesAFailurePermanent() = runTest {
         // Another HTTP stack can report being offline as something other than an IOException.
         val offline = FakeServer(java.nio.channels.UnresolvedAddressException())
@@ -102,6 +109,41 @@ class ClientTest {
             assertEquals(1, server.urls.size)
             assertEquals(emptyList(), server.delays)
         }
+    }
+
+    @Test fun aCloseDelimitedTruncationRetriesAndRecovers() = runTest {
+        var calls = 0
+        val delays = mutableListOf<Double>()
+        val transport = IwlsTransport {
+            calls++
+            IwlsResponse(200, if (calls == 1) "[{\"id\":" else "[]", null, closeDelimited = true)
+        }
+        assertEquals(emptyList(), IwlsClient(transport, IwlsPacer(0)) { delays += it }.stationList())
+        assertEquals(2, calls)
+        assertEquals(listOf(2.0), delays)
+    }
+
+    @Test fun aCloseDelimitedTruncationRemainsTransientAfterFourAttempts() = runTest {
+        var calls = 0
+        val transport = IwlsTransport { calls++; IwlsResponse(200, "[", null, closeDelimited = true) }
+        val error = assertFailsWith<IwlsException.Transient> {
+            IwlsClient(transport, IwlsPacer(0)) {}.stationList()
+        }
+        assertIs<java.io.EOFException>(error.cause)
+        assertEquals(4, calls)
+    }
+
+    @Test fun wellFormedCloseDelimitedJsonWithInvalidSchemaIsPermanent() = runTest {
+        var calls = 0
+        val transport = IwlsTransport { calls++; IwlsResponse(200, "[{}]", null, closeDelimited = true) }
+        assertFailsWith<IwlsException.Permanent> { IwlsClient(transport, IwlsPacer(0)) {}.stationList() }
+        assertEquals(1, calls)
+    }
+
+    @Test fun requestsAndKeepsTheRecipesFinerGrid() = runTest {
+        val server = FakeServer(200, body = """[{"eventDate":"1970-01-01T00:03:00Z","value":2},{"eventDate":"1970-01-01T00:05:00Z","value":3}]""")
+        assertEquals(listOf(ChsSample(180_000, 2.0)), server.client().series("wlp", "resolved", firstChunk, IwlsSampleGrid(3)))
+        assertTrue(server.urls.single().query.contains("resolution=THREE_MINUTES"))
     }
 
     @Test fun retriesAnEmptyResponse() = runTest {

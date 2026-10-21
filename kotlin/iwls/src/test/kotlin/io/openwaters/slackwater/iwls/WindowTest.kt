@@ -7,7 +7,7 @@ import kotlinx.serialization.json.*
 
 class WindowTest {
     @Test fun followsTheContractVersion() {
-        assertEquals(1, fixture().getValue("version").jsonPrimitive.int)
+        assertEquals(2, fixture().getValue("version").jsonPrimitive.int)
     }
 
     @Test fun anchorsAtTheStationsLocalMidnightAcrossDst() {
@@ -38,7 +38,7 @@ class WindowTest {
 
     @Test fun cachesOnlyFullNonEmptyWeeks() {
         val week = ChsChunk(Instant.EPOCH, Instant.ofEpochSecond(604_800))
-        assertTrue(week.canCache(listOf(ChsSample(0, 1.0))))
+        assertTrue(week.canCache(listOf(ChsSample(0, 1.0), ChsSample(604_800_000, 1.0))))
         assertFalse(week.canCache(emptyList()))
         assertFalse(ChsChunk(Instant.EPOCH, Instant.ofEpochSecond(900)).canCache(listOf(ChsSample(0, 1.0))))
         assertFalse(ChsChunk(Instant.EPOCH, Instant.ofEpochSecond(604_800, 1)).isCacheable)

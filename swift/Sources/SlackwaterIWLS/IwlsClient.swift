@@ -59,6 +59,8 @@ public struct IwlsClient: Sendable {
     private let transport: @Sendable (URL) async throws -> (Data, URLResponse)
     private let pause: @Sendable (Double) async throws -> Void
     let requestPacer: IwlsPacer
+    private let chunkCache: IwlsChunkCache?
+    private let beforeRequest: @Sendable () throws -> Void
     private let observeRequest: @Sendable (TimeInterval) async -> Void
 
     private static let session: URLSession = {
@@ -71,17 +73,21 @@ public struct IwlsClient: Sendable {
         return URLSession(configuration: config)
     }()
 
-    public init(session: URLSession? = nil,
+    public init(session: URLSession? = nil, chunkCache: IwlsChunkCache? = nil,
+                beforeRequest: @escaping @Sendable () throws -> Void = {},
                 observeRequest: @escaping @Sendable (TimeInterval) async -> Void = { _ in }) {
         let session = session ?? Self.session
         self.init(transport: { try await session.data(from: $0) },
                   pause: { try await Task.sleep(for: .seconds($0)) },
-                  pacer: Self.pacer, observeRequest: observeRequest)
+                  pacer: Self.pacer, chunkCache: chunkCache, beforeRequest: beforeRequest, observeRequest: observeRequest)
     }
 
     init(transport: @escaping @Sendable (URL) async throws -> (Data, URLResponse),
          pause: @escaping @Sendable (Double) async throws -> Void,
-         pacer: IwlsPacer, observeRequest: @escaping @Sendable (TimeInterval) async -> Void) {
+         pacer: IwlsPacer, chunkCache: IwlsChunkCache? = nil,
+         beforeRequest: @escaping @Sendable () throws -> Void = {}, observeRequest: @escaping @Sendable (TimeInterval) async -> Void) {
+        self.chunkCache = chunkCache
+        self.beforeRequest = beforeRequest
         self.transport = transport
         self.pause = pause
         self.requestPacer = pacer
@@ -104,20 +110,32 @@ public struct IwlsClient: Sendable {
         try JSONDecoder().decode(Metadata.self, from: await get(IwlsFetch.metadataURL(stationID: stationID)))
     }
 
-    public func series(_ code: String, stationID: String, chunk: ChsChunk) async throws -> [ChsSample] {
-        let url = try IwlsFetch.dataURL(code, stationID: stationID, chunk: chunk)
-        return try IwlsFetch.onGrid(IwlsFetch.decode(await get(url)))
+    public func series(_ code: String, stationID: String, chunk: ChsChunk,
+                       grid: IwlsSampleGrid = .fifteenMinutes, cache: Bool = true,
+                       cacheEmpty: Bool = true) async throws -> [ChsSample] {
+        let url = try IwlsFetch.dataURL(code, stationID: stationID, chunk: chunk, grid: grid)
+        if cache, let chunkCache {
+            return try await chunkCache.samples(code, stationID: stationID, chunk: chunk, grid: grid, cacheEmpty: cacheEmpty) {
+                try IwlsFetch.decode(await get(url))
+            }
+        }
+        return try IwlsFetch.onGrid(IwlsFetch.decode(await get(url)), grid: grid)
     }
 
     private func get(_ url: URL) async throws -> Data {
+        try Task.checkCancellation()
         var attempt = 0
         while true {
             try Task.checkCancellation()
+            try beforeRequest()
             attempt += 1
             let began = ContinuousClock.now
+            try await requestPacer.wait()
+            try Task.checkCancellation()
+            // A policy refusal is terminal, even when it uses a normally transient transport error.
+            try beforeRequest()
             let result: Result<(Data, URLResponse), any Error>
             do {
-                try await requestPacer.wait()
                 result = .success(try await transport(url))
             } catch {
                 result = .failure(error)

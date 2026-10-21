@@ -3,7 +3,20 @@
 // nothing that serves predictions (the API, the CLI) may depend on it.
 export const BASE = "https://api-iwls.dfo-mpo.gc.ca/api/v1";
 const WEEK_S = 604_800;
-const GRID_MS = 900_000;
+const resolutions = new Map([
+  [1, "ONE_MINUTE"],
+  [3, "THREE_MINUTES"],
+  [5, "FIVE_MINUTES"],
+  [15, "FIFTEEN_MINUTES"],
+  [60, "SIXTY_MINUTES"],
+]);
+export const emptyLifetimeMs = 86_400_000;
+
+export function resolutionFor(sampleMinutes: number): string {
+  const resolution = resolutions.get(sampleMinutes);
+  if (!resolution) throw new IwlsError("permanent", "unsupported IWLS sample grid");
+  return resolution;
+}
 
 export const resolveToleranceKm = 3;
 export const fitSeries = new Set(["wlp", "wcsp1", "wcdp1"]);
@@ -97,15 +110,76 @@ export function chunkPlan(days: number, end: Date): Chunk[] {
 }
 
 export function isCacheable(chunk: Chunk): boolean {
-  return chunk.end - chunk.start === WEEK_S * 1000;
+  return (
+    Number.isFinite(chunk.start) &&
+    chunk.start % (WEEK_S * 1000) === 0 &&
+    chunk.end - chunk.start === WEEK_S * 1000
+  );
 }
 
-/** A full week's identity never changes, so an empty response kept under it would be a missing week for good. */
-export function canCache(chunk: Chunk, samples: Sample[]): boolean {
-  return isCacheable(chunk) && samples.length > 0;
+/** Complete endpoints prevent a truncated response from becoming a permanent missing span. */
+export function canCache(chunk: Chunk, samples: Sample[], sampleMinutes = 15): boolean {
+  resolutionFor(sampleMinutes);
+  return (
+    isCacheable(chunk) &&
+    samples.length > 0 &&
+    samples.every(
+      (s) =>
+        Number.isFinite(s.v) &&
+        s.t >= chunk.start &&
+        s.t <= chunk.end &&
+        s.t % (sampleMinutes * 60_000) === 0,
+    ) &&
+    samples.some((s) => s.t === chunk.start) &&
+    samples.some((s) => s.t === chunk.end)
+  );
 }
 
-export function dataURL(code: string, stationID: string, chunk: Chunk): URL {
+export interface ChunkCacheEntry {
+  startMs: number;
+  endMs: number;
+  sampleMinutes: number;
+  fetchedAtMs: number;
+  samples: Sample[];
+}
+
+export function cacheEntry(
+  chunk: Chunk,
+  samples: Sample[],
+  sampleMinutes = 15,
+  fetchedAtMs = Date.now(),
+): ChunkCacheEntry | undefined {
+  resolutionFor(sampleMinutes);
+  if (
+    !Number.isFinite(fetchedAtMs) ||
+    !isCacheable(chunk) ||
+    (samples.length > 0 && !canCache(chunk, samples, sampleMinutes))
+  )
+    return undefined;
+  return { startMs: chunk.start, endMs: chunk.end, sampleMinutes, fetchedAtMs, samples };
+}
+
+export function isReusable(
+  entry: ChunkCacheEntry,
+  chunk: Chunk,
+  sampleMinutes = 15,
+  nowMs = Date.now(),
+): boolean {
+  resolutionFor(sampleMinutes);
+  if (
+    entry.startMs !== chunk.start ||
+    entry.endMs !== chunk.end ||
+    entry.sampleMinutes !== sampleMinutes ||
+    !Number.isFinite(entry.fetchedAtMs) ||
+    !isCacheable(chunk)
+  )
+    return false;
+  if (entry.samples.length > 0) return canCache(chunk, entry.samples, sampleMinutes);
+  const age = nowMs - entry.fetchedAtMs;
+  return age >= 0 && age < emptyLifetimeMs;
+}
+
+export function dataURL(code: string, stationID: string, chunk: Chunk, sampleMinutes = 15): URL {
   // Only the fit series: the grid filter would silently empty event series like wlp-hilo.
   if (
     !stationID ||
@@ -122,7 +196,7 @@ export function dataURL(code: string, stationID: string, chunk: Chunk): URL {
     "time-series-code": code,
     from: iso(chunk.start),
     to: iso(chunk.end),
-    resolution: "FIFTEEN_MINUTES",
+    resolution: resolutionFor(sampleMinutes),
   }).toString();
   return url;
 }
@@ -142,8 +216,9 @@ export function decode(raw: unknown): Sample[] {
   return out;
 }
 
-export function onGrid(samples: Sample[]): Sample[] {
-  return samples.filter((s) => s.t % GRID_MS === 0);
+export function onGrid(samples: Sample[], sampleMinutes = 15): Sample[] {
+  resolutionFor(sampleMinutes);
+  return samples.filter((s) => s.t % (sampleMinutes * 60_000) === 0);
 }
 
 /** Seconds to wait before another attempt, or `null` when the client should not retry. */
@@ -340,14 +415,18 @@ export function createClient(options: ClientOptions = {}) {
         ebbDirection: typeof raw.ebbDirection === "number" ? raw.ebbDirection : undefined,
       };
     },
-    /** One fit-series chunk on the 15-minute grid. */
+    /** One fit-series chunk on the consumer recipe’s grid. */
     async series(
       code: string,
       stationID: string,
       chunk: Chunk,
       signal?: AbortSignal,
+      sampleMinutes = 15,
     ): Promise<Sample[]> {
-      return onGrid(decode(await get(dataURL(code, stationID, chunk), signal)));
+      return onGrid(
+        decode(await get(dataURL(code, stationID, chunk, sampleMinutes), signal)),
+        sampleMinutes,
+      );
     },
   };
 }

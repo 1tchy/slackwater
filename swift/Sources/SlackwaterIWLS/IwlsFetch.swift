@@ -99,14 +99,14 @@ public enum IwlsFetch {
         return out
     }
 
-    public static func onGrid(_ samples: [ChsSample]) -> [ChsSample] {
-        samples.filter { $0.t.truncatingRemainder(dividingBy: 900_000) == 0 }
+    public static func onGrid(_ samples: [ChsSample], grid: IwlsSampleGrid = .fifteenMinutes) -> [ChsSample] {
+        samples.filter { $0.t.truncatingRemainder(dividingBy: Double(grid.sampleMinutes) * 60_000) == 0 }
     }
 
     public static let fitSeries: Set<String> = ["wlp", "wcsp1", "wcdp1"]
 
-    public static func dataURL(_ code: String, stationID: String, chunk: ChsChunk) throws -> URL {
-        // Only the fit series: the 15-minute grid filter would silently drop event series like wlp-hilo.
+    public static func dataURL(_ code: String, stationID: String, chunk: ChsChunk, grid: IwlsSampleGrid = .fifteenMinutes) throws -> URL {
+        // Only the fit series: grid filtering would silently drop event series like wlp-hilo.
         guard fitSeries.contains(code),
               chunk.start.timeIntervalSince1970.isFinite, chunk.end.timeIntervalSince1970.isFinite,
               chunk.end >= chunk.start, chunk.end.timeIntervalSince(chunk.start) <= 7 * 86400 else {
@@ -118,7 +118,7 @@ public enum IwlsFetch {
             URLQueryItem(name: "time-series-code", value: code),
             URLQueryItem(name: "from", value: iso.string(from: chunk.start)),
             URLQueryItem(name: "to", value: iso.string(from: chunk.end)),
-            URLQueryItem(name: "resolution", value: "FIFTEEN_MINUTES")
+            URLQueryItem(name: "resolution", value: grid.resolution)
         ]
         return url.url!
     }
