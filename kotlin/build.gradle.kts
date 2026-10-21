@@ -17,7 +17,7 @@ java {
     targetCompatibility = JavaVersion.VERSION_1_8
 }
 dependencies {
-    testImplementation(platform("org.junit:junit-bom:5.12.2"))
+    testImplementation(platform("org.junit:junit-bom:5.14.4"))
     testImplementation(kotlin("test-junit5"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
