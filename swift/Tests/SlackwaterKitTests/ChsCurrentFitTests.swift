@@ -54,12 +54,17 @@ private func samples(_ rows: [Sample]) -> [HarmonicSample] {
 }
 
 private struct GoldenComponent: Decodable { let periodHours: Double; let amplitude: Double; let phaseDegrees: Double }
+private struct GoldenOffAxis: Decodable { let amplitudeDegrees: Double; let periodHours: Double }
 private struct GoldenSeries: Decodable {
     let start: String; let days: Int; let floodDirection: Double; let meanFlow: Double
+    let offAxis: GoldenOffAxis
     let components: [GoldenComponent]
 }
 private struct GoldenSpan: Decodable { let start: String; let end: String }
-private struct GoldenWindow: Decodable { let days: Int; let slacks: [String] }
+private struct GoldenExtremum: Decodable { let time: String; let kind: String; let speed: Double }
+private struct GoldenWindow: Decodable {
+    let days: Int; let velocities: [Double]; let slacks: [String]; let extrema: [GoldenExtremum]
+}
 private struct Golden: Decodable {
     let series: GoldenSeries; let events: GoldenSpan; let windows: [GoldenWindow]; let stamp: String
 }
@@ -69,12 +74,14 @@ private struct Golden: Decodable {
 }
 
 /// The same synthetic gate the TypeScript generator fits, fitted and predicted
-/// here: SlackwaterKit must reproduce the slacks the stamp was derived from.
-@Test func chsCurrentFitReproducesTheGoldenSlacks() throws {
+/// here at the tolerances the generator keeps its stamp under: SlackwaterKit
+/// must reproduce the velocities, slacks and peaks the stamp was derived from.
+@Test func chsCurrentFitReproducesTheGoldenWindows() throws {
     let g = try loadFixture("chs-current-golden", as: Golden.self)
     let start = parseISO(g.series.start)
     let step = Double(ChsCurrentFit.sampleMinutes * 60)
-    let ebb = (g.series.floodDirection + 180).truncatingRemainder(dividingBy: 360)
+    let flood = g.series.floodDirection
+    let ebb = (flood + 180).truncatingRemainder(dividingBy: 360)
     var speeds: [HarmonicSample] = [], directions: [HarmonicSample] = []
     for k in 0...(g.series.days * 86_400 / Int(step)) {
         let time = start.addingTimeInterval(Double(k) * step)
@@ -82,23 +89,43 @@ private struct Golden: Decodable {
         let velocity = g.series.components.reduce(g.series.meanFlow) { sum, c in
             sum + c.amplitude * cos(2 * .pi * hours / c.periodHours - c.phaseDegrees * .pi / 180)
         }
-        speeds.append(HarmonicSample(time: time, value: abs(velocity)))
-        directions.append(HarmonicSample(time: time, value: velocity >= 0 ? g.series.floodDirection : ebb))
+        // Off the flood axis by theta, with the speed the projection needs to recover the velocity.
+        let theta = g.series.offAxis.amplitudeDegrees * sin(2 * .pi * hours / g.series.offAxis.periodHours)
+        let direction = (velocity >= 0 ? flood : flood + 180) + theta
+        speeds.append(HarmonicSample(time: time, value: abs(velocity) / cos(theta * .pi / 180)))
+        directions.append(HarmonicSample(
+            time: time,
+            value: (direction.truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360)))
     }
-    let samples = ChsCurrentFit.project(speeds: speeds, directions: directions,
-                                        floodDirection: g.series.floodDirection)
+    let samples = ChsCurrentFit.project(speeds: speeds, directions: directions, floodDirection: flood)
     let fitEnd = start.addingTimeInterval(Double(g.series.days) * 86_400)
     let from = parseISO(g.events.start), to = parseISO(g.events.end)
+    let inSpan = { (t: Date) in t >= from && t < to }
     for w in g.windows {
+        let label = "\(w.days) d"
         let cut = fitEnd.addingTimeInterval(-Double(w.days) * 86_400)
         let result = try fit(samples: samples.filter { $0.time >= cut }, constituents: ChsCurrentFit.basis)
-        let station = CurrentStation(constituents: result.constituents, floodDirection: g.series.floodDirection,
+        let station = CurrentStation(constituents: result.constituents, floodDirection: flood,
                                      ebbDirection: ebb, offset: result.offset)
-        let slacks = station.slacks(from: from, to: to).map(\.time).filter { $0 >= from && $0 < to }
-        let expected = w.slacks.map(parseISO)
-        #expect(slacks.count == expected.count, "\(w.days) d")
-        for (a, e) in zip(slacks, expected) {
-            #expect(abs(a.timeIntervalSince(e)) < 60, "\(w.days) d slack near \(e)")
+
+        let velocities = station.speeds(from: from, to: to, step: 600).map(\.speed)
+        #expect(velocities.count == w.velocities.count, "\(label) velocities")
+        for (a, e) in zip(velocities, w.velocities) {
+            #expect(abs(a - e) < 1e-4, "\(label) velocity \(a) against \(e)")
+        }
+
+        let slacks = station.slacks(from: from, to: to).map(\.time).filter(inSpan)
+        #expect(slacks.count == w.slacks.count, "\(label) slacks")
+        for (a, e) in zip(slacks, w.slacks.map(parseISO)) {
+            #expect(abs(a.timeIntervalSince(e)) < 30, "\(label) slack near \(e)")
+        }
+
+        let extrema = station.maxima(from: from, to: to).filter { inSpan($0.time) }
+        let kinds = w.extrema.map { $0.kind == "maxFlood" ? CurrentEventKind.maxFlood : .maxEbb }
+        #expect(extrema.map(\.kind) == kinds, "\(label) extremum kinds")
+        for (a, e) in zip(extrema, w.extrema) {
+            #expect(abs(a.time.timeIntervalSince(parseISO(e.time))) < 30, "\(label) extremum near \(e.time)")
+            #expect(abs(a.speed - e.speed) < 1e-3, "\(label) extremum speed near \(e.time)")
         }
     }
 }
