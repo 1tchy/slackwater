@@ -1,21 +1,25 @@
 # CHS current fit validation
 
-This record supports `chsCurrentFit`, the CHS current gate fit recipe every Slackwater client uses (`chsCurrentFit` and `projectChsCurrent` in `@slackwater/engine`, `ChsCurrentFit` in Swift and Kotlin), and the gate admission and provisional-fit rules in the app's [CHS data model](https://github.com/openwatersio/slackwater-ios/blob/main/docs/chs-data-model.md). `benchmarks/chs-current-fit.ts` scores the recipe against the bar set here every month. Measurements below come from its runs with fits ending at 00:00 UTC on July 31 and October 1, 2026; they are evidence for those fits, not a claim about every future fit.
+This record supports `chsCurrentFit`, the CHS current gate fit recipe every Slackwater client uses (`chsCurrentFit` and `projectChsCurrent` in `@slackwater/engine`, `ChsCurrentFit` in Swift and Kotlin), and the gate admission and provisional-fit rules in the app's [CHS data model](https://github.com/openwatersio/slackwater-ios/blob/main/docs/chs-data-model.md). `benchmarks/chs-current-fit.ts` fits each gate as the apps do and scores held-out weeks against CHS's own published events. It records rows, not verdicts: [openwatersio/chs-current-validation](https://github.com/openwatersio/chs-current-validation) runs it every month, pools a year of rows per gate, and publishes each gate's tier and bounds.
 
 ## Recipe
 
 A gate is fitted from CHS's own predictions, never from a current meter record: IWLS `wcsp1` speed and `wcdp1` direction on a 15-minute grid, projected onto the flood axis from the station's IWLS metadata as speed · cos(direction − flood). The projection is linear, so fitting it is equivalent to fitting both velocity components and projecting the result. The basis is the 23 constituents of `chsTideFit`.
 
+`chsCurrentFit.stamp` identifies the recipe. `fixtures/generate/gen-chs-current-golden.mjs` derives it from the recipe's data and the slacks it predicts for a fixed synthetic gate, so a change to the recipe, `fit` or `createCurrentPredictor` that moves one of those slacks changes it. Every row records the stamp, and rows from different stamps never pool.
+
 Each gate fits over 60 or 210 days. Separating K1 from P1, which drive the Pacific coast's diurnal inequality, takes at least 183 days. A 210-day gate can show the fit of its trailing 60 days first, as a provisional answer, when that fit matched every slack and its measured worst slack error, rounded up to 5 minutes, is at most 45 minutes. Past 45 minutes the warning itself says not to use the answer, so the gate waits for its full fit. Which window a gate uses, and the provisional bound it quotes, are curated per gate from these measurements.
 
 ## Method
 
-1. **Gates** are the curated CHS current stations in `@slackwater/database`. Each resolves by position, never by name, to the nearest IWLS station serving `wcsp1` within 3 km. Malibu Rapids has no current station of its own (its slack derives from a tide port), so it is skipped.
-2. **Fetch** 210 days of `wcsp1` and `wcdp1` ending at the start of the current UTC month and project them with `projectChsCurrent`. The 60-day fit is the trailing slice of the same series, as slackwater-ios's `tools/FitValidation` fits it. The app itself snaps its fetch start back to a 7-day grid, so it fits 0 to 7 days more than the nominal window.
-3. **Fit** each window with `fit(samples, chsCurrentFit.basis)` and predict with `createCurrentPredictor`, the offset carried as `meanFlow`.
-4. **Score** against CHS's published `wcp1-events` over held-out weeks starting 28, 90, 180 and 270 days after the fit ends. A fitted model never expires on device, so one week understates how far it drifts. Each observed slack is matched to the nearest predicted slack, and each observed extremum to the nearest predicted extremum of the same kind, within 180 minutes.
+1. **Gates** are the curated CHS current stations in `@slackwater/database`, or the list in `GATES`. Each resolves by position, never by name, to the nearest IWLS station serving `wcsp1` within 3 km. Malibu Rapids has no current station of its own (its slack derives from a tide port), so it is skipped.
+2. **Grid.** Grid point i's fit ends at the gate's local midnight on 2026-10-29 + 28i + 7(i mod 4) days. Staggering the fit end by whole weeks spreads every held-out age across the 27.55-day perigee cycle, which a plain 28-day grid would hold to a five-day slice of.
+3. **Fetch** `wcsp1` and `wcdp1` through the IWLS fetching contract on the app's chunk plan for the longest window, newest first, boundary duplicates kept, and project them with `projectChsCurrent`. Each shorter window starts with the chunk the app's own plan for it starts with, so a fit spans the same 0 to 7 extra days the app's does.
+4. **Fit** each window with `fit(samples, chsCurrentFit.basis)` and predict with `createCurrentPredictor`, the offset carried as `meanFlow`. `WINDOWS=60,210,365` adds a 365-day window that is reported only.
+5. **Score** against CHS's published `wcp1-events` over held-out weeks starting 0, 28, 90, 180 and 270 days after the fit ends. Events are fetched for each week padded by the 180-minute match window. CHS slacks and predicted slacks pair one to one in time order, never crossing, within 180 minutes: the most pairs, then the least total error; a CHS slack left unpaired is missed, and a predicted slack in the week left unpaired is invented. Each CHS extremum of at least 0.75 kn is matched to the nearest predicted extremum of the same kind within 180 minutes, and the model's sign at every CHS extremum tests for a reversed axis.
+6. **Horizon.** CHS publishes events a calendar year at a time, and each run probes how far a station's run. A week whose padded end passes it is recorded as beyond the horizon; a week with no published events is recorded as having none.
 
-`FAST=1` scores three gates at +28 d only.
+Each row records the gate, its IWLS station and flood axis, the stamp, the scorer version, the grid point, the fit's span and residual, the held-out age, and each event's error as a bare number in event order, with no CHS timestamps. A gate record carries the station's time zone, horizon, a hash of one fixed past week of `wcsp1` that changes if CHS revises its predictions, and a reason for any gate with no rows. A transient IWLS failure ends the run rather than leaving a gate out. `FAST=1` scores three gates at +28 days, and `NO_FLOORS=1` records without asserting the share floors below.
 
 ## The bar (set before scoring)
 
@@ -30,9 +34,11 @@ Slack is the quantity a skipper acts on, because a gate is transited at slack, s
 | Slacks matched                                    | every observed slack within 180 min                          | an unmatched slack is worse than any error it could report                                                    |
 | Axis                                              | model velocity has the wrong sign at < 60 % of CHS's extrema | systematic disagreement means a reversed flood axis                                                           |
 
-A passing fit meets every clause. A held-out week whose CHS extrema are all weaker than 0.75 kn has no extremum or speed score, and fails. Matching is nearest-event, not one-to-one, the same as slackwater-ios's `tools/FitValidation`: two observed slacks can match one predicted slack.
+A passing week meets every clause and has no missed or invented slack. A week with nothing to score fails. The share floors below hold single weeks to this bar; the results repository applies the year-round tiers.
 
 ## Results
+
+The tables below score single held-out weeks with fits ending at 00:00 UTC on exactly 60 or 210 days of samples, under scorer version 1, which matched each CHS slack to its nearest predicted slack. Year-round results under the current scorer are published by openwatersio/chs-current-validation.
 
 The July 31 run reproduces the validation record behind the gates slackwater-ios ships, which `tools/FitValidation` measured through the frozen JavaScript fitter: every Salish Sea gate's slack, extremum and speed numbers agree to the precision that record kept (0.1 minute, 0.01 knots) at both windows. The national gates were recorded from a fit ending August 15 and are not compared. The fitter and scoring here are therefore the same measurement.
 
@@ -40,7 +46,7 @@ The October 1 run, one season later, gives different verdicts for gates that sit
 
 A gate's verdict near the bar is a property of the season it was measured in as much as of the gate. A gate's window and provisional bound should come from more than one run's +28 d week; the monthly benchmark supplies the runs.
 
-The benchmark asserts, for every window and held-out week, that no axis reverses, that at least 30 % of the 23 fitted gates pass at 210 days (5 %, so at least 2 gates, at 60 days), and that the median gate's slack median is under 15 minutes at 210 days (20 at 60). Those are floors at least one gate below the October 1 run's worst week (3 of 23 at 60 days, 10 of 23 at 210), to move toward the bar as the recipe improves.
+Unless `NO_FLOORS` is set, the benchmark asserts for every grid point, window and held-out week that no axis reverses, that at least 30 % of the fitted gates pass at 210 days (5 %, so at least 2 gates, at 60 days), and that the median gate's slack median is under 15 minutes at 210 days (20 at 60). Those are floors at least one gate below the October 1 run's worst week (3 of 23 at 60 days, 10 of 23 at 210), to move toward the bar as the recipe improves.
 
 ### Fit ending July 31, held out +28 d
 
@@ -181,8 +187,8 @@ The benchmark asserts, for every window and held-out week, that no axis reverses
 
 ## Reproduction
 
-    npm run build && node benchmarks/chs-current-fit.ts
+    npm run build && npm run chs-current-fit
 
-Results are written to `benchmarks/chs-current-fit.csv`, one row per gate, window and held-out week, and the run prints each gate's disposition at +28 d: the shortest window that passes and, for 210 days, the provisional bound its 60-day fit earns. `FIT_END=YYYY-MM-DD` ends the fit at 00:00 UTC that day instead, to reproduce a recorded run: `FIT_END=2026-07-31` gives the July 31 tables above. IWLS responses are cached in `.test-cache/`. A full run makes about 1,500 IWLS requests.
+The run writes `benchmarks/chs-current-fit.jsonl` (one row per gate, grid point, window and held-out week), `benchmarks/chs-current-gates.jsonl` (one record per gate) and `benchmarks/chs-current-fit.csv` (a one-week summary of each row). `GRID=-12..0` or `GRID=-1,0` scores those grid points, and `FIT_END=YYYY-MM-DD` the grid point whose fit ends that day; neither scores the newest grid point on or before today. `chs-current-grid.ts` defines the grid. IWLS responses are cached in `.test-cache/`, keyed with both chunk ends. One grid point costs about 1,600 IWLS requests, paced 2.5 seconds apart.
 
-The share floors are measured against every curated gate except Malibu Rapids, so a gate IWLS stops listing, or serves no events for, counts as a miss rather than dropping out of the measurement. An IWLS error other than a rate limit or server error still ends the run, as it does in `chs-fit.ts`. The run fails if two gates resolve to the same IWLS station. The printed dispositions come from one held-out week of one run; a curated window or bound needs more than that.
+The run fails if two gates resolve to the same IWLS station.
