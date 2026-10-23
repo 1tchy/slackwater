@@ -1,6 +1,6 @@
 # CHS current fit validation
 
-This record supports `chsCurrentFit`, the CHS current gate fit recipe every Slackwater client uses (`chsCurrentFit` and `projectChsCurrent` in `@slackwater/engine`, `ChsCurrentFit` in Swift and Kotlin), and the gate admission and provisional-fit rules in the app's [CHS data model](https://github.com/openwatersio/slackwater-ios/blob/main/docs/chs-data-model.md). `benchmarks/chs-current-fit.ts` fits each gate as the apps do and scores held-out weeks against CHS's own published events. It records rows, not verdicts: [openwatersio/chs-current-validation](https://github.com/openwatersio/chs-current-validation) runs it every month, pools a year of rows per gate, and publishes each gate's tier and bounds.
+This record supports `chsCurrentFit`, the CHS current gate fit recipe every Slackwater client uses (`chsCurrentFit` and `projectChsCurrent` in `@slackwater/engine`, `ChsCurrentFit` in Swift and Kotlin), and the gate admission and provisional-fit rules in the app's [CHS data model](https://github.com/openwatersio/slackwater-ios/blob/main/docs/chs-data-model.md). `benchmarks/chs-current-fit.ts` fits each gate as the apps do and scores held-out weeks against CHS's own published events. It records rows, not verdicts: openwatersio/chs-current-validation will run it every month, pool a year of rows per gate, and publish each gate's tier and bounds.
 
 ## Recipe
 
@@ -34,17 +34,17 @@ Slack is the quantity a skipper acts on, because a gate is transited at slack, s
 | Slacks matched                                    | every observed slack within 180 min                          | an unmatched slack is worse than any error it could report                                                    |
 | Axis                                              | model velocity has the wrong sign at < 60 % of CHS's extrema | systematic disagreement means a reversed flood axis                                                           |
 
-A passing week meets every clause and has no missed or invented slack. A week with nothing to score fails. The share floors below hold single weeks to this bar; the results repository applies the year-round tiers.
+A passing week meets every clause and has no missed or invented slack. A week with nothing to score fails. The share floors below hold single weeks to this bar; the results repository will apply the year-round tiers.
 
 ## Results
 
-The tables below score single held-out weeks with fits ending at 00:00 UTC on exactly 60 or 210 days of samples, under scorer version 1, which matched each CHS slack to its nearest predicted slack. Year-round results under the current scorer are published by openwatersio/chs-current-validation. The current benchmark fits on the app's chunk plan and scores under scorer version 2, so it does not regenerate these tables.
+The tables below score single held-out weeks with fits ending at 00:00 UTC on exactly 60 or 210 days of samples, under scorer version 1, which matched each CHS slack to its nearest predicted slack. Year-round results under the current scorer will be published by openwatersio/chs-current-validation. The current benchmark fits on the app's chunk plan and scores under scorer version 2, so it does not regenerate these tables.
 
 The July 31 run reproduced the validation record behind the gates slackwater-ios ships, which `tools/FitValidation` measured through the frozen JavaScript fitter: every Salish Sea gate's slack, extremum and speed numbers agreed to the precision that record kept (0.1 minute, 0.01 knots) at both windows. The national gates were recorded from a fit ending August 15 and were not compared. Under scorer version 1, this benchmark and `tools/FitValidation` were the same measurement.
 
 The October 1 run, one season later, gives different verdicts for gates that sit near the bar. At +28 d, Blackney Passage misses worst slack (41 minutes) and Hole in the Wall misses extremum timing (23 minutes) at 210 days, while Johnstone Strait - Central and Great Bras d'Or pass only at 210 days. Dodd Narrows, Weynton Passage, Quatsino Narrows and Masset Sound pass at 60 days. Across the four held-out weeks, Hole in the Wall passes at 210 days in two of four, and only Active Pass, First Narrows and Seymour Narrows pass every week at both windows. No fit reverses its axis.
 
-A gate's verdict near the bar is a property of the season it was measured in as much as of the gate. A gate's window and bounds therefore come from a year of held-out weeks, which openwatersio/chs-current-validation pools from this benchmark's rows.
+A gate's verdict near the bar is a property of the season it was measured in as much as of the gate. A gate's window and bounds will therefore come from a year of held-out weeks, which openwatersio/chs-current-validation will pool from this benchmark's rows.
 
 Unless `NO_FLOORS` is set, the benchmark asserts for every grid point, window and held-out week that no axis reverses, that at least 30 % of the fitted gates pass at 210 days (5 %, so at least 2 gates, at 60 days), and that the median gate's slack median is under 15 minutes at 210 days (20 at 60). Those are floors at least one gate below the October 1 run's worst week (3 of 23 at 60 days, 10 of 23 at 210), to move toward the bar as the recipe improves.
 

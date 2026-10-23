@@ -1,6 +1,6 @@
 // Scores one held-out week of a fitted CHS current gate against CHS's own
 // published events, for benchmarks/chs-current-fit.ts and the results
-// repository that pools its rows. Nothing here does I/O, so the rules are
+// repository that will pool its rows. Nothing here does I/O, so the rules are
 // tested on synthetic events in chs-current-score.test.ts.
 import { MATCH_WINDOW_MIN } from "./chs-current-grid.ts";
 import { parseEventDate } from "./iwls.ts";
@@ -207,7 +207,7 @@ export function rounded(score: WeekScore): WeekScore {
   };
 }
 
-/** The one-week bar in docs/validation/chs-currents.md, for the share floors and the CSV summary. Year-round verdicts pool many weeks in the results repository. */
+/** The one-week bar in docs/validation/chs-currents.md, for the share floors and the CSV summary. Year-round verdicts will pool many weeks in the results repository. */
 export const WEEK_BAR = {
   slackMedianMin: 15,
   slackWorstMin: 30,
@@ -273,7 +273,7 @@ export type RowStatus = "scored" | "no_events" | "beyond_horizon";
 
 /**
  * One gate, grid point, window and held-out week. A scored row adds a
- * rounded WeekScore. The results repository finds a gate's worst slacks from
+ * rounded WeekScore. The results repository will find a gate's worst slacks from
  * `slack_errors` positions, with `grid` and `offset_days`, so rows never need
  * CHS's own timestamps.
  */

@@ -3,8 +3,8 @@
 // `wcp1-events`. The fit inputs follow the IWLS fetching contract
 // (docs/iwls-fetch.md): the window ends at the gate's local midnight on a
 // grid point's date (chs-current-grid.ts) and spans the app's chunk plan. The
-// run writes rows, not verdicts; the results repository pools a year of them
-// (docs/validation/chs-currents.md).
+// run writes rows, not verdicts; the results repository will pool a year of
+// them (docs/validation/chs-currents.md).
 //
 // GRID=-12..0 or GRID=-1,0 picks grid points, FIT_END=YYYY-MM-DD the one ending
 // that day, and neither the newest on or before today. WINDOWS=60,210,365 adds

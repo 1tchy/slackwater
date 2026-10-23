@@ -44,8 +44,8 @@ jobs:
       - name: Run benchmarks
         run: npm run benchmarks
 
-      # The results repository runs the full CHS current benchmark on its own
-      # schedule. Branch pushes keep the quick run as a regression check.
+      # The results repository will run the full CHS current benchmark on its
+      # own schedule. Branch pushes keep the quick run as a regression check.
       - name: Run CHS current fit benchmark
         if: ${{ !cancelled() && env.FAST != '' }}
         run: npm run chs-current-fit
