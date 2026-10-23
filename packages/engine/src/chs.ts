@@ -57,9 +57,9 @@ export const chsTideFit = {
  *
  * `stamp` identifies this recipe. `fixtures/generate/gen-chs-current-golden.mjs`
  * derives it from the recipe's data and the slacks it predicts for a fixed
- * synthetic gate, so any change that moves one of those slacks changes it.
- * Validation results and fitted models record the stamp they were measured or
- * fitted on.
+ * synthetic gate, so any change that moves one of those slacks by 30 seconds or
+ * more changes it. Validation results and fitted models record the stamp they
+ * were measured or fitted on.
  */
 export const chsCurrentFit = {
   speedSeries: "wcsp1",
@@ -68,7 +68,7 @@ export const chsCurrentFit = {
   days: [60, 210],
   sampleMinutes: 15,
   provisionalSlackMaxMinutes: 45,
-  stamp: "0983752c65c1",
+  stamp: "c1e59ae33895",
 } as const satisfies {
   speedSeries: string;
   directionSeries: string;
