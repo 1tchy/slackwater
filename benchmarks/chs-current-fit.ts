@@ -153,7 +153,10 @@ for (const gate of gates) {
     const meta = await cached(
       `${station.id}-metadata`,
       () => iwls.metadata(station.id),
-      (m) => m.timeZoneCode !== undefined,
+      (m) =>
+        m.timeZoneCode !== undefined &&
+        m.floodDirection !== undefined &&
+        m.ebbDirection !== undefined,
     );
     if (!meta.timeZoneCode) throw new GateDataError("no time zone in IWLS metadata");
     if (meta.floodDirection === undefined || meta.ebbDirection === undefined) {
