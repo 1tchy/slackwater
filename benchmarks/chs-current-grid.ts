@@ -59,6 +59,14 @@ export function withinHorizon(
   return last <= horizonMs;
 }
 
+/** Splits [fromMs, toMs] into consecutive spans, oldest first, each at most the seven days docs/iwls-fetch.md allows one IWLS request. */
+export function requestSpans(fromMs: number, toMs: number): [number, number][] {
+  const longest = 7 * DAY;
+  const spans: [number, number][] = [];
+  for (let t = fromMs; t < toMs; t += longest) spans.push([t, Math.min(t + longest, toMs)]);
+  return spans;
+}
+
 /**
  * The grid points a run scores: `FIT_END=YYYY-MM-DD` names one by its date,
  * `GRID=a..b` or `GRID=a,b,c` by index, and neither means the newest on or

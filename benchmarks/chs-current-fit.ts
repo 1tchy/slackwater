@@ -46,6 +46,7 @@ import {
   OFFSET_DAYS,
   WEEK_DAYS,
   fitEndDate,
+  requestSpans,
   selectGrid,
   withinHorizon,
 } from "./chs-current-grid.ts";
@@ -410,11 +411,20 @@ function eventsURL(station: IwlsStation, from: number, to: number): URL {
 }
 
 // wcp1-events is a scoring input, not a fit series, so it skips the
-// contract's grid filter but keeps its pacing and retries.
+// contract's grid filter but keeps its pacing, retries and seven-day request
+// limit. An event on the instant two requests share comes back from both.
 function events(station: IwlsStation, from: number, to: number): Promise<ScoreEvent[]> {
   return cached(
     `${station.id}-wcp1-events-${from / 1000}-${to / 1000}`,
-    async () => parseEvents(await iwls.get(eventsURL(station, from, to))),
+    async () => {
+      const all: ScoreEvent[] = [];
+      for (const [a, b] of requestSpans(from, to)) {
+        for (const e of parseEvents(await iwls.get(eventsURL(station, a, b)))) {
+          if (!all.some((x) => x.time === e.time && x.kind === e.kind)) all.push(e);
+        }
+      }
+      return all;
+    },
     (e) => e.length > 0,
   );
 }

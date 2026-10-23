@@ -5,6 +5,7 @@ import {
   fitEndDate,
   gridIndexOf,
   gridIndexOnOrBefore,
+  requestSpans,
   selectGrid,
   stagger,
   withinHorizon,
@@ -70,6 +71,17 @@ describe("the CHS current fit-end grid", () => {
     expect(withinHorizon(fitEnd, last)).toBe(true);
     // The same span one millisecond longer.
     expect(withinHorizon(fitEnd + 1, last)).toBe(false);
+  });
+
+  test("splits a held-out week and its pairing context into requests of at most seven days", () => {
+    const from = utc(fitEndDate(0)) - CONTEXT_MIN * 60_000;
+    const to = utc(fitEndDate(0)) + 7 * DAY + CONTEXT_MIN * 60_000;
+    expect(requestSpans(from, to)).toEqual([
+      [from, from + 7 * DAY],
+      [from + 7 * DAY, to],
+    ]);
+    expect(requestSpans(from, from + 7 * DAY)).toEqual([[from, from + 7 * DAY]]);
+    expect(requestSpans(from, from)).toEqual([]);
   });
 
   test("spreads every held-out age across the perigee cycle", () => {
