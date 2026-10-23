@@ -65,33 +65,63 @@ export function parseEvents(raw: unknown): ScoreEvent[] {
     .sort((a, b) => a.time - b.time);
 }
 
+interface Matching {
+  gapMs: number;
+  observedSum: number;
+  links: [number, number][];
+}
+
+/** More pairs first, then less total gap, then the earlier CHS slacks paired. */
+function better(a: Matching, b: Matching): boolean {
+  if (a.links.length !== b.links.length) return a.links.length > b.links.length;
+  if (a.gapMs !== b.gapMs) return a.gapMs < b.gapMs;
+  return a.observedSum < b.observedSum;
+}
+
 /**
- * Pairs CHS slacks with predicted slacks one to one, closest pairs first,
- * never farther apart than `windowMin`. Maps each paired observed index to
- * its predicted index, so one predicted slack can never stand in for two CHS
- * slacks and hide a missed reversal.
+ * Pairs CHS slacks with predicted slacks one to one, never farther apart than
+ * `windowMin`. Pairs keep their time order: if one CHS slack pairs with a
+ * predicted slack, a later CHS slack pairs with a later predicted slack. Both
+ * inputs must be sorted ascending. Among the matchings that keep order, the
+ * most pairs win, then the least total gap, then the earliest CHS slacks.
+ * Maps each paired observed index to its predicted index, so one predicted
+ * slack can never stand in for two CHS slacks.
+ *
+ * Order matters because a crossed pair scores each slack against its
+ * neighbour's prediction. CHS slacks at 100 and 130 minutes against a model at
+ * 125 and 155 would read as 55 and 5 instead of 25 and 25, and a late model's
+ * slacks would read as a missed reversal plus an invented slack it does not
+ * have.
  */
 export function pairSlacks(
   observed: readonly number[],
   predicted: readonly number[],
   windowMin = MATCH_WINDOW_MIN,
 ): Map<number, number> {
-  const candidates: { o: number; p: number; dt: number }[] = [];
-  observed.forEach((t, o) =>
-    predicted.forEach((u, p) => {
-      const dt = Math.abs(t - u) / 60_000;
-      if (dt <= windowMin) candidates.push({ o, p, dt });
-    }),
-  );
-  candidates.sort((a, b) => a.dt - b.dt || a.o - b.o || a.p - b.p);
-  const pairs = new Map<number, number>();
-  const used = new Set<number>();
-  for (const { o, p } of candidates) {
-    if (pairs.has(o) || used.has(p)) continue;
-    pairs.set(o, p);
-    used.add(p);
+  // best[i][j] is the best matching of observed[0..i) with predicted[0..j).
+  const best: Matching[][] = Array.from({ length: observed.length + 1 }, () => []);
+  best[0][0] = { gapMs: 0, observedSum: 0, links: [] };
+  for (let i = 0; i <= observed.length; i++) {
+    for (let j = 0; j <= predicted.length; j++) {
+      if (i === 0 && j === 0) continue;
+      const options: Matching[] = [];
+      if (i > 0) options.push(best[i - 1][j]);
+      if (j > 0) options.push(best[i][j - 1]);
+      if (i > 0 && j > 0) {
+        const gap = Math.abs(observed[i - 1] - predicted[j - 1]);
+        if (gap / 60_000 <= windowMin) {
+          const prev = best[i - 1][j - 1];
+          options.push({
+            gapMs: prev.gapMs + gap,
+            observedSum: prev.observedSum + (i - 1),
+            links: [...prev.links, [i - 1, j - 1]],
+          });
+        }
+      }
+      best[i][j] = options.reduce((a, b) => (better(b, a) ? b : a));
+    }
   }
-  return pairs;
+  return new Map(best[observed.length][predicted.length].links);
 }
 
 /**

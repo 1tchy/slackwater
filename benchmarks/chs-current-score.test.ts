@@ -27,8 +27,17 @@ const week = (observed: ScoreEvent[], predicted: ScoreEvent[], velocityAt = () =
   scoreWeek({ start, end, observed, predicted, velocityAt });
 
 describe("pairSlacks", () => {
-  test("pairs the closest slacks first and each slack once", () => {
+  test("prefers the closer pair when only one can be made", () => {
     expect(pairSlacks([at(60), at(160)], [at(150), at(400)])).toEqual(new Map([[1, 0]]));
+  });
+
+  test("keeps pairs in time order at a double slack", () => {
+    expect(pairSlacks([at(100), at(130)], [at(125), at(155)])).toEqual(
+      new Map([
+        [0, 0],
+        [1, 1],
+      ]),
+    );
   });
 
   test("never pairs slacks farther apart than the window", () => {
@@ -45,6 +54,16 @@ describe("scoreWeek", () => {
 
   test("lets one predicted slack pair with one CHS slack only", () => {
     expect(week([slack(100), slack(160)], [slack(130)]).slack_errors).toEqual([30, null]);
+  });
+
+  test("scores a late double slack in order", () => {
+    expect(week([slack(100), slack(130)], [slack(125), slack(155)]).slack_errors).toEqual([25, 25]);
+  });
+
+  test("pairs a late model's slacks in order rather than inventing one", () => {
+    const score = week([slack(1000), slack(1240)], [slack(1130), slack(1380)]);
+    expect(score.slack_errors).toEqual([130, 140]);
+    expect(score.invented).toBe(0);
   });
 
   test("counts a predicted slack no CHS slack pairs with as invented", () => {
