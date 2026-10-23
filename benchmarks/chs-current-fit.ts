@@ -235,9 +235,10 @@ for (const i of grid) {
         scored.filter((s) => s.reversed).length,
         `grid ${i} ${days} d +${offset} d reversed axes`,
       ).toBe(0);
-      // Floors from the run with the fit ending 2026-10-01 in
-      // docs/validation/chs-currents.md, at least one gate below its worst
-      // held-out week. Verdicts near the bar move with the season (#437).
+      // Floors set under scorer version 1 from the run with the fit ending
+      // 2026-10-01 in docs/validation/chs-currents.md, at least one gate below
+      // its worst held-out week; #437 tracks recalibrating them. The share
+      // counts a gate that records a reason as a miss.
       const baseline =
         days === chsCurrentFit.days[0] ? { share: 0.05, p50: 20 } : { share: 0.3, p50: 15 };
       expect(

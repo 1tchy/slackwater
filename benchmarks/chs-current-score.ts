@@ -5,7 +5,7 @@
 import { CONTEXT_MIN, MATCH_WINDOW_MIN } from "./chs-current-grid.ts";
 import { parseEventDate } from "./iwls.ts";
 
-/** Bumped whenever a rule changes how this benchmark fits or scores (the fetch plan, the fit end, padding, pairing), so rows from different rules never pool. */
+/** Bumped whenever a rule changes how this benchmark fits or scores (the fetch plan, the fit end, pairing context, pairing), so the results repository can pool only rows scored by the same rules. */
 export const SCORER_VERSION = 2;
 /** CHS extrema weaker than this get no timing or speed score: the peak of a weak drift is noise. */
 export const SIGNIFICANT_KN = 0.75;
