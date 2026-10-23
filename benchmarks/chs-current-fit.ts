@@ -10,9 +10,9 @@
 // that day, and neither the newest on or before today. WINDOWS=60,210,365 adds
 // the report-only 365-day window. GATES=path.json scores [{ id, latitude,
 // longitude }] in place of the curated gates in @slackwater/database.
-// NO_FLOORS=1 skips the reversed-axis, share and p50 assertions but still
-// requires every group short of the horizon, report-only windows included, to
-// have scored rows, and the run to have at least one. FAST=1 scores
+// NO_FLOORS=1 skips the share and p50 assertions but still checks for reversed
+// axes, requires every group short of the horizon, report-only windows
+// included, to have scored rows, and requires the run to have one. FAST=1 scores
 // three gates at +28 d. OUT=dir writes the outputs somewhere other than
 // benchmarks/.
 import { expect } from "vitest";
@@ -245,11 +245,15 @@ for (const i of grid) {
       const allBeyond = group.length > 0 && group.every((r) => r.status === "beyond_horizon");
       if (allBeyond) continue;
       expect(scored.length, `grid ${i} ${days} d +${offset} d gates scored`).toBeGreaterThan(0);
-      if (NO_FLOORS || !recipeDays.includes(days)) continue;
+      if (!recipeDays.includes(days)) continue;
+      // A reversed axis keeps its slack times, so its rows score as usual and
+      // only this check sees it. It depends on no calibration, so NO_FLOORS
+      // keeps it.
       expect(
         scored.filter((s) => s.reversed).length,
         `grid ${i} ${days} d +${offset} d reversed axes`,
       ).toBe(0);
+      if (NO_FLOORS) continue;
       // Floors set under scorer version 1 from the run with the fit ending
       // 2026-10-01 in docs/validation/chs-currents.md, at least one gate below
       // its worst held-out week; #437 tracks recalibrating them. The share
