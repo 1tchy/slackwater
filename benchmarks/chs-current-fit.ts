@@ -56,6 +56,7 @@ import {
   rounded,
   scoreWeek,
   summarize,
+  type GateFailure,
   type GateRecord,
   type ResultRow,
   type RowStatus,
@@ -88,8 +89,12 @@ const CANARY: Chunk = {
 const NOT_FITTED = new Set(["chs-malibu-rapids"]);
 const NOT_FITTED_REASON = "not fitted: its slack derives from a tide port";
 
-/** A gate's own data problem: recorded as its reason, and the run goes on. */
+/** A gate's own data problem: recorded as its reason or failure, and the run goes on. */
 class GateDataError extends Error {}
+// Transient failures end the run, so a results run never commits a grid point
+// that silently lacks a gate.
+const isPermanent = (error: unknown) =>
+  error instanceof GateDataError || (error instanceof IwlsError && error.kind === "permanent");
 
 await mkdir(".test-cache", { recursive: true });
 await mkdir(OUT, { recursive: true });
@@ -170,17 +175,20 @@ for (const gate of gates) {
       if (!(error instanceof IwlsError && error.kind === "permanent")) throw error;
       console.log(`${gate.id}: canary left out: ${error.message}`);
     }
-    // A gate's rows land only when every grid point succeeded, so a gate is
-    // either scored or carries a reason, never half of each.
-    const own: ResultRow[] = [];
-    for (const i of grid) own.push(...(await scoreGridPoint(gate, station, axis, i, horizon)));
-    rows.push(...own);
+    // Every grid point and window has rows or a failure of its own, so one
+    // that IWLS cannot serve or that will not fit costs only its own rows.
+    const failures: GateFailure[] = [];
+    for (const i of grid) {
+      try {
+        rows.push(...(await scoreGridPoint(gate, station, axis, i, horizon, failures)));
+      } catch (error) {
+        if (!isPermanent(error)) throw error;
+        failures.push({ grid: i, reason: (error as Error).message });
+      }
+    }
+    if (failures.length) record.failures = failures;
   } catch (error) {
-    // Transient failures end the run, so a results run never commits a grid
-    // point that silently lacks a gate.
-    const permanent =
-      error instanceof GateDataError || (error instanceof IwlsError && error.kind === "permanent");
-    if (!permanent) throw error;
+    if (!isPermanent(error)) throw error;
     record.reason = (error as Error).message;
   }
   records.push(record);
@@ -192,7 +200,10 @@ await writeLines(join(OUT, "chs-current-fit.jsonl"), rows);
 await writeLines(join(OUT, "chs-current-gates.jsonl"), records);
 writeSummary(join(OUT, "chs-current-fit.csv"), rows);
 
-for (const r of records.filter((r) => r.reason)) console.log(`${r.gate}: ${r.reason}`);
+for (const r of records) {
+  if (r.reason) console.log(`${r.gate}: ${r.reason}`);
+  for (const f of r.failures ?? []) console.log(`${r.gate}: grid ${f.grid}: ${f.reason}`);
+}
 const codes = records.filter((r) => r.iwls && !r.reason).map((r) => r.iwls);
 expect(
   records
@@ -226,8 +237,8 @@ for (const i of grid) {
         p50SlackMedianMin: p50,
       });
       // An empty group is a failure, not a skip, even under NO_FLOORS and for a
-      // report-only window: every gate recording a reason would otherwise pass
-      // vacuously.
+      // report-only window: every gate recording a reason or failure would
+      // otherwise pass vacuously.
       const allBeyond = group.length > 0 && group.every((r) => r.status === "beyond_horizon");
       if (allBeyond) continue;
       expect(scored.length, `grid ${i} ${days} d +${offset} d gates scored`).toBeGreaterThan(0);
@@ -239,7 +250,7 @@ for (const i of grid) {
       // Floors set under scorer version 1 from the run with the fit ending
       // 2026-10-01 in docs/validation/chs-currents.md, at least one gate below
       // its worst held-out week; #437 tracks recalibrating them. The share
-      // counts a gate that records a reason as a miss.
+      // counts a gate with no row here, for a reason or a failure, as a miss.
       const baseline =
         days === chsCurrentFit.days[0] ? { share: 0.05, p50: 20 } : { share: 0.3, p50: 15 };
       expect(
@@ -265,6 +276,7 @@ async function scoreGridPoint(
   axis: { flood: number; ebb: number; timeZone: string },
   i: number,
   horizon: number,
+  failures: GateFailure[],
 ): Promise<ResultRow[]> {
   const date = fitEndDate(i);
   // Midday UTC is the same calendar day in every Canadian zone.
@@ -294,19 +306,28 @@ async function scoreGridPoint(
       harmonic(own.flatMap((c) => c.directions)),
       axis.flood,
     );
+    // A window too short or degenerate to fit, such as a rank-deficient one,
+    // is the gate's own data problem, and the grid point's other windows
+    // still score.
     if (samples.length < 1 + 2 * chsCurrentFit.basis.length) {
-      throw new GateDataError(
-        `IWLS served ${samples.length} samples for the ${days}-day fit ending ${date}`,
-      );
+      failures.push({
+        grid: i,
+        fit_days: days,
+        reason: `IWLS served ${samples.length} samples for the ${days}-day fit ending ${date}`,
+      });
+      continue;
     }
     let result: HarmonicFit;
     try {
       result = fit(samples, chsCurrentFit.basis);
     } catch (error) {
-      // A series too short or degenerate to fit, such as a rank-deficient
-      // one, is the gate's own data problem, not a reason to end the run.
       if (!(error instanceof RangeError)) throw error;
-      throw new GateDataError(`the ${days}-day fit ending ${date} failed: ${error.message}`);
+      failures.push({
+        grid: i,
+        fit_days: days,
+        reason: `the ${days}-day fit ending ${date} failed: ${error.message}`,
+      });
+      continue;
     }
     const predictor = createCurrentPredictor(result.constituents, {
       floodDirection: axis.flood,

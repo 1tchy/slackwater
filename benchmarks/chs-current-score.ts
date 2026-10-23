@@ -319,5 +319,15 @@ export interface GateRecord {
   horizon?: string;
   /** A hash of one fixed past week of `wcsp1`; a change means CHS revised its predictions. Absent when IWLS refused that week. */
   canary?: string;
+  /** Why the gate has no rows at all, such as no IWLS station near it. */
   reason?: string;
+  /** Each grid point, or window of one, the gate has no rows for, and why. Its other rows still land. */
+  failures?: GateFailure[];
+}
+
+export interface GateFailure {
+  grid: number;
+  /** Absent when the whole grid point failed, such as when IWLS refused a chunk. */
+  fit_days?: number;
+  reason: string;
 }
