@@ -2,7 +2,7 @@
 // published events, for benchmarks/chs-current-fit.ts and the results
 // repository that will pool its rows. Nothing here does I/O, so the rules are
 // tested on synthetic events in chs-current-score.test.ts.
-import { MATCH_WINDOW_MIN } from "./chs-current-grid.ts";
+import { CONTEXT_MIN, MATCH_WINDOW_MIN } from "./chs-current-grid.ts";
 import { parseEventDate } from "./iwls.ts";
 
 /** Bumped whenever a rule changes how this benchmark fits or scores (the fetch plan, the fit end, padding, pairing), so rows from different rules never pool. */
@@ -129,9 +129,10 @@ export function pairSlacks(
 }
 
 /**
- * Scores the week [start, end). Slacks pair across the week padded by the
- * match window on each side, so a slack just outside the week can pair with
- * one just inside, and only slacks inside the week are scored.
+ * Scores the week [start, end). Slacks within CONTEXT_MIN of the week take
+ * part in pairing, so a slack just outside the week pairs with its own
+ * neighbour, also outside, rather than taking one inside the week. Pairs are
+ * at most MATCH_WINDOW_MIN apart, and only slacks inside the week are scored.
  */
 export function scoreWeek({
   start,
@@ -142,23 +143,23 @@ export function scoreWeek({
 }: {
   start: number;
   end: number;
-  /** CHS events over at least the padded week. */
+  /** CHS events over at least the week and CONTEXT_MIN on each side. */
   observed: readonly ScoreEvent[];
   /** The model's events over at least the same span. */
   predicted: readonly ScoreEvent[];
   /** The model's signed velocity at an instant. */
   velocityAt: (time: number) => number;
 }): WeekScore {
-  const pad = MATCH_WINDOW_MIN * 60_000;
-  const padded = (e: ScoreEvent) =>
-    e.kind === "slack" && e.time >= start - pad && e.time <= end + pad;
+  const context = CONTEXT_MIN * 60_000;
+  const inContext = (e: ScoreEvent) =>
+    e.kind === "slack" && e.time >= start - context && e.time <= end + context;
   const inWeek = (t: number) => t >= start && t < end;
   const obs = observed
-    .filter(padded)
+    .filter(inContext)
     .map((e) => e.time)
     .sort((a, b) => a - b);
   const pred = predicted
-    .filter(padded)
+    .filter(inContext)
     .map((e) => e.time)
     .sort((a, b) => a - b);
   const pairs = pairSlacks(obs, pred);

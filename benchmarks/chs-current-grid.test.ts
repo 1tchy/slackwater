@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  CONTEXT_MIN,
   OFFSET_DAYS,
   fitEndDate,
   gridIndexOf,
@@ -56,11 +57,19 @@ describe("the CHS current fit-end grid", () => {
     expect(() => gridIndexOf("2026-10-30")).toThrow(/2026-10-29/);
   });
 
-  test("keeps every held-out week and its padding inside the event horizon", () => {
+  test("keeps every held-out week and its pairing context inside the event horizon", () => {
     const horizon = utc("2028-01-01");
     expect(withinHorizon(utc(fitEndDate(5)), horizon)).toBe(true);
     expect(withinHorizon(utc(fitEndDate(6)), horizon)).toBe(false);
     expect(withinHorizon(utc(fitEndDate(6)), horizon, [28])).toBe(true);
+  });
+
+  test("lets the last week's pairing context reach the horizon but not pass it", () => {
+    const fitEnd = utc(fitEndDate(0));
+    const last = fitEnd + (270 + 7) * DAY + CONTEXT_MIN * 60_000;
+    expect(withinHorizon(fitEnd, last)).toBe(true);
+    // The same span one millisecond longer.
+    expect(withinHorizon(fitEnd + 1, last)).toBe(false);
   });
 
   test("spreads every held-out age across the perigee cycle", () => {

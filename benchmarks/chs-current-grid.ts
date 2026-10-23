@@ -9,8 +9,10 @@
 export const ANCHOR = "2026-10-29";
 export const OFFSET_DAYS = [0, 28, 90, 180, 270] as const;
 export const WEEK_DAYS = 7;
-/** How far apart a CHS slack and a predicted slack may be and still pair, and so how far each held-out week is padded. */
+/** How far apart a CHS slack and a predicted slack may be and still pair, and how far a scored CHS extremum may be from its predicted match. */
 export const MATCH_WINDOW_MIN = 180;
+/** The span around a held-out week whose events take part in pairing, so a slack just outside the week can pair with its own neighbour rather than one inside the week. */
+export const CONTEXT_MIN = 2 * MATCH_WINDOW_MIN;
 
 const DAY = 86_400_000;
 const anchorMs = Date.parse(`${ANCHOR}T00:00:00Z`);
@@ -47,13 +49,13 @@ export function gridIndexOf(date: string): number {
   return i;
 }
 
-/** Whether every held-out week of a fit ending at `fitEndMs`, padded by the match window, ends by `horizonMs`. */
+/** Whether every held-out week of a fit ending at `fitEndMs`, with its pairing context, ends by `horizonMs`. */
 export function withinHorizon(
   fitEndMs: number,
   horizonMs: number,
   offsets: readonly number[] = OFFSET_DAYS,
 ): boolean {
-  const last = fitEndMs + (Math.max(...offsets) + WEEK_DAYS) * DAY + MATCH_WINDOW_MIN * 60_000;
+  const last = fitEndMs + (Math.max(...offsets) + WEEK_DAYS) * DAY + CONTEXT_MIN * 60_000;
   return last <= horizonMs;
 }
 

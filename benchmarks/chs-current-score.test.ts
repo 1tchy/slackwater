@@ -78,6 +78,22 @@ describe("scoreWeek", () => {
     expect(score.invented).toBe(0);
   });
 
+  test("lets a CHS slack before the week pair with its own neighbour, not one inside the week", () => {
+    const score = week([slack(-170), slack(170)], [slack(-200), slack(5), slack(175)]);
+    expect(score.slack_errors).toEqual([5]);
+    expect(score.invented).toBe(1);
+  });
+
+  test("lets a CHS slack after the week pair with its own neighbour, not one inside the week", () => {
+    const w = 7 * 1440;
+    const score = week(
+      [slack(w - 170), slack(w + 170)],
+      [slack(w - 175), slack(w - 5), slack(w + 200)],
+    );
+    expect(score.slack_errors).toEqual([5]);
+    expect(score.invented).toBe(1);
+  });
+
   test("ignores predicted slacks in the padding", () => {
     expect(week([], [slack(7 * 1440 + 60)]).invented).toBe(0);
   });

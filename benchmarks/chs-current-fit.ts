@@ -35,11 +35,12 @@ import {
   type Sample,
 } from "./iwls.ts";
 import {
-  MATCH_WINDOW_MIN,
+  CONTEXT_MIN,
   OFFSET_DAYS,
   WEEK_DAYS,
   fitEndDate,
   selectGrid,
+  withinHorizon,
 } from "./chs-current-grid.ts";
 import {
   SCORER_VERSION,
@@ -55,7 +56,8 @@ import {
 
 const __dirname = new URL(".", import.meta.url).pathname;
 const DAY = 86_400_000;
-const PAD = MATCH_WINDOW_MIN * 60_000;
+// Each held-out week's events and predictions span its pairing context.
+const CONTEXT = CONTEXT_MIN * 60_000;
 const iwls = createClient();
 
 const FAST = !!process.env.FAST;
@@ -294,17 +296,20 @@ async function scoreGridPoint(
         week_start: iso(weekStart),
         status: "scored",
       };
-      if (weekEnd + PAD > horizon) {
+      if (!withinHorizon(fitEnd, horizon, [offset])) {
         out.push({ ...base, status: "beyond_horizon" });
         continue;
       }
-      const observed = await events(station, weekStart - PAD, weekEnd + PAD);
+      const observed = await events(station, weekStart - CONTEXT, weekEnd + CONTEXT);
       if (!observed.some((e) => e.time >= weekStart && e.time < weekEnd)) {
         out.push({ ...base, status: "no_events" });
         continue;
       }
       const predicted: ScoreEvent[] = predictor
-        .getEventsPrediction({ start: new Date(weekStart - PAD), end: new Date(weekEnd + PAD) })
+        .getEventsPrediction({
+          start: new Date(weekStart - CONTEXT),
+          end: new Date(weekEnd + CONTEXT),
+        })
         .map((e) => ({ time: e.time.getTime(), kind: e.kind, speed: e.speed }));
       const score = scoreWeek({
         start: weekStart,
