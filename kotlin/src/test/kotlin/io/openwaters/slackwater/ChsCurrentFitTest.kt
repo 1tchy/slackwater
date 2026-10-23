@@ -33,4 +33,25 @@ class ChsCurrentFitTest {
             projected.zip(expected).forEach { (p, e) -> assertEquals(e.value, p.value, 1e-12, c.string("note")) }
         }
     }
+
+    @Test fun carriesTheGoldenStamp() {
+        assertEquals(fixture("chs-current-golden").string("stamp"), ChsCurrentFit.STAMP)
+    }
+
+    @Test fun predictsTheGoldenSlacksFromTheReferenceFit() {
+        val golden = fixture("chs-current-golden")
+        val events = golden.getValue("events").obj()
+        val from = events.instant("start")
+        val to = events.instant("end")
+        val flood = golden.getValue("series").obj().number("floodDirection")
+        for (item in golden.array("windows")) {
+            val window = item.obj()
+            val station = CurrentStation(window.constituents(), flood, (flood + 180) % 360, window.number("offset"))
+            val slacks = station.slacks(from, to).map { it.time }.filter { it >= from && it < to }
+            val expected = window.array("slacks").map { java.time.Instant.parse(it.jsonPrimitive.content) }
+            val label = "${window.number("days").toInt()} d"
+            assertEquals(expected.size, slacks.size, label)
+            slacks.zip(expected).forEach { (a, e) -> assertTrue(kotlin.math.abs(secondsBetween(a, e)) < 1.0, "$label slack near $e") }
+        }
+    }
 }
