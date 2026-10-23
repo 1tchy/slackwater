@@ -161,7 +161,14 @@ for (const gate of gates) {
     Object.assign(record, { flood: axis.flood, ebb: axis.ebb, time_zone: axis.timeZone });
     const horizon = await eventHorizon(station);
     record.horizon = iso(horizon);
-    record.canary = await canary(station);
+    try {
+      record.canary = await canary(station);
+    } catch (error) {
+      // The canary is a diagnostic, so a permanent refusal leaves it out and
+      // the gate's rows still land. A transient failure still ends the run.
+      if (!(error instanceof IwlsError && error.kind === "permanent")) throw error;
+      console.log(`${gate.id}: canary left out: ${error.message}`);
+    }
     // A gate's rows land only when every grid point succeeded, so a gate is
     // either scored or carries a reason, never half of each.
     const own: ResultRow[] = [];

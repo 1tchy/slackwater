@@ -317,7 +317,7 @@ export interface GateRecord {
   time_zone?: string;
   /** The end of CHS's published events for this station, ISO 8601. */
   horizon?: string;
-  /** A hash of one fixed past week of `wcsp1`; a change means CHS revised its predictions. */
+  /** A hash of one fixed past week of `wcsp1`; a change means CHS revised its predictions. Absent when IWLS refused that week. */
   canary?: string;
   reason?: string;
 }
