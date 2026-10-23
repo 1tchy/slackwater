@@ -62,8 +62,10 @@ private struct GoldenSeries: Decodable {
 }
 private struct GoldenSpan: Decodable { let start: String; let end: String }
 private struct GoldenExtremum: Decodable { let time: String; let kind: String; let speed: Double }
+private struct GoldenConstituent: Decodable { let name: String; let amplitude: Double; let phase: Double }
 private struct GoldenWindow: Decodable {
-    let days: Int; let velocities: [Double]; let slacks: [String]; let extrema: [GoldenExtremum]
+    let days: Int; let offset: Double; let constituents: [GoldenConstituent]
+    let velocities: [Double]; let slacks: [String]; let extrema: [GoldenExtremum]
 }
 private struct Golden: Decodable {
     let series: GoldenSeries; let events: GoldenSpan; let windows: [GoldenWindow]; let stamp: String
@@ -73,6 +75,55 @@ private struct Golden: Decodable {
     #expect(ChsCurrentFit.stamp == (try loadFixture("chs-current-golden", as: Golden.self)).stamp)
 }
 
+/// Checks a station's predictions over the golden week against a recorded
+/// window: every velocity within 1e-4 kn, each slack and extremum within
+/// `seconds`, and each extremum's speed within 1e-3 kn, with the same counts
+/// and kinds.
+private func expectGoldenWindow(_ station: CurrentStation, _ w: GoldenWindow, over events: GoldenSpan,
+                                seconds: TimeInterval) {
+    let label = "\(w.days) d"
+    let from = parseISO(events.start), to = parseISO(events.end)
+    let inSpan = { (t: Date) in t >= from && t < to }
+
+    let velocities = station.speeds(from: from, to: to, step: 600).map(\.speed)
+    #expect(velocities.count == w.velocities.count, "\(label) velocities")
+    for (a, e) in zip(velocities, w.velocities) {
+        #expect(abs(a - e) < 1e-4, "\(label) velocity \(a) against \(e)")
+    }
+
+    let slacks = station.slacks(from: from, to: to).map(\.time).filter(inSpan)
+    #expect(slacks.count == w.slacks.count, "\(label) slacks")
+    for (a, e) in zip(slacks, w.slacks.map(parseISO)) {
+        #expect(abs(a.timeIntervalSince(e)) < seconds, "\(label) slack near \(e)")
+    }
+
+    let extrema = station.maxima(from: from, to: to).filter { inSpan($0.time) }
+    let kinds = w.extrema.map { $0.kind == "maxFlood" ? CurrentEventKind.maxFlood : .maxEbb }
+    #expect(extrema.map(\.kind) == kinds, "\(label) extremum kinds")
+    for (a, e) in zip(extrema, w.extrema) {
+        #expect(abs(a.time.timeIntervalSince(parseISO(e.time))) < seconds, "\(label) extremum near \(e.time)")
+        #expect(abs(a.speed - e.speed) < 1e-3, "\(label) extremum speed near \(e.time)")
+    }
+}
+
+/// Each window's recorded reference fit, predicted here without fitting, so
+/// the check runs on every platform: SlackwaterKit's predictor must turn the
+/// TypeScript engine's constituents into the same velocities, slacks and peaks.
+@Test func chsCurrentFitPredictsTheGoldenWindowsFromTheReferenceFit() throws {
+    let g = try loadFixture("chs-current-golden", as: Golden.self)
+    let flood = g.series.floodDirection
+    let ebb = (flood + 180).truncatingRemainder(dividingBy: 360)
+    for w in g.windows {
+        let constituents = w.constituents.map {
+            HarmonicConstituent(name: $0.name, amplitude: $0.amplitude, phase: $0.phase)
+        }
+        let station = CurrentStation(constituents: constituents, floodDirection: flood,
+                                     ebbDirection: ebb, offset: w.offset)
+        expectGoldenWindow(station, w, over: g.events, seconds: 1)
+    }
+}
+
+#if canImport(Accelerate)
 /// The same synthetic gate the TypeScript generator fits, fitted and predicted
 /// here at the tolerances the generator keeps its stamp under: SlackwaterKit
 /// must reproduce the velocities, slacks and peaks the stamp was derived from.
@@ -99,33 +150,12 @@ private struct Golden: Decodable {
     }
     let samples = ChsCurrentFit.project(speeds: speeds, directions: directions, floodDirection: flood)
     let fitEnd = start.addingTimeInterval(Double(g.series.days) * 86_400)
-    let from = parseISO(g.events.start), to = parseISO(g.events.end)
-    let inSpan = { (t: Date) in t >= from && t < to }
     for w in g.windows {
-        let label = "\(w.days) d"
         let cut = fitEnd.addingTimeInterval(-Double(w.days) * 86_400)
         let result = try fit(samples: samples.filter { $0.time >= cut }, constituents: ChsCurrentFit.basis)
         let station = CurrentStation(constituents: result.constituents, floodDirection: flood,
                                      ebbDirection: ebb, offset: result.offset)
-
-        let velocities = station.speeds(from: from, to: to, step: 600).map(\.speed)
-        #expect(velocities.count == w.velocities.count, "\(label) velocities")
-        for (a, e) in zip(velocities, w.velocities) {
-            #expect(abs(a - e) < 1e-4, "\(label) velocity \(a) against \(e)")
-        }
-
-        let slacks = station.slacks(from: from, to: to).map(\.time).filter(inSpan)
-        #expect(slacks.count == w.slacks.count, "\(label) slacks")
-        for (a, e) in zip(slacks, w.slacks.map(parseISO)) {
-            #expect(abs(a.timeIntervalSince(e)) < 30, "\(label) slack near \(e)")
-        }
-
-        let extrema = station.maxima(from: from, to: to).filter { inSpan($0.time) }
-        let kinds = w.extrema.map { $0.kind == "maxFlood" ? CurrentEventKind.maxFlood : .maxEbb }
-        #expect(extrema.map(\.kind) == kinds, "\(label) extremum kinds")
-        for (a, e) in zip(extrema, w.extrema) {
-            #expect(abs(a.time.timeIntervalSince(parseISO(e.time))) < 30, "\(label) extremum near \(e.time)")
-            #expect(abs(a.speed - e.speed) < 1e-3, "\(label) extremum speed near \(e.time)")
-        }
+        expectGoldenWindow(station, w, over: g.events, seconds: 30)
     }
 }
+#endif
