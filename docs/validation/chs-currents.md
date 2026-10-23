@@ -1,6 +1,6 @@
 # CHS current fit validation
 
-This record supports `chsCurrentFit`, the CHS current gate fit recipe every Slackwater client uses (`chsCurrentFit` and `projectChsCurrent` in `@slackwater/engine`, `ChsCurrentFit` in Swift and Kotlin), and the gate admission and provisional-fit rules in the app's [CHS data model](https://github.com/openwatersio/slackwater-ios/blob/main/docs/chs-data-model.md). `benchmarks/chs-current-fit.ts` fits each gate as the apps do and scores held-out weeks against CHS's own published events. It records rows, not verdicts: openwatersio/chs-current-validation will run it every month, pool a year of rows per gate, and publish each gate's tier and bounds.
+This record supports `chsCurrentFit`, the CHS current gate fit recipe every Slackwater client uses (`chsCurrentFit` and `projectChsCurrent` in `@slackwater/engine`, `ChsCurrentFit` in Swift and Kotlin), and the gate admission and provisional-fit rules in the app's [CHS data model](https://github.com/openwatersio/slackwater-ios/blob/main/docs/chs-data-model.md). `benchmarks/chs-current-fit.ts` fits each gate as the apps do and scores held-out weeks against CHS's own published events. It records rows, not verdicts. This repository's benchmarks workflow runs it every month on the newest grid point and keeps its rows as a workflow artifact. openwatersio/chs-current-validation will take that run over, pool a year of rows per gate, and publish each gate's tier and bounds.
 
 ## Recipe
 
