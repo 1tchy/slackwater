@@ -186,7 +186,10 @@ for (const i of grid) {
         passing,
         p50SlackMedianMin: p50,
       });
-      if (NO_FLOORS || group.every((r) => r.status === "beyond_horizon")) continue;
+      // An empty group is a failure, not a skip: every gate recording a reason
+      // would otherwise pass vacuously.
+      const allBeyond = group.length > 0 && group.every((r) => r.status === "beyond_horizon");
+      if (NO_FLOORS || allBeyond) continue;
       expect(scored.length, `grid ${i} ${days} d +${offset} d gates scored`).toBeGreaterThan(0);
       expect(
         scored.filter((s) => s.reversed).length,
@@ -216,24 +219,31 @@ async function scoreGridPoint(
   const date = fitEndDate(i);
   // Midday UTC is the same calendar day in every Canadian zone.
   const fitEnd = localMidnight(new Date(`${date}T12:00:00Z`), axis.timeZone).getTime();
-  // The samples the app fits: every chunk of its plan, newest first, boundary
-  // duplicates kept, ending at the gate's local midnight.
-  const speeds: Sample[] = [];
-  const directions: Sample[] = [];
+  // Every chunk of the longest window's plan, newest first, each kept apart so
+  // a shorter window can take exactly its own plan's chunks.
+  const fetched: { speeds: Sample[]; directions: Sample[] }[] = [];
   for (const chunk of chunkPlan(longest, new Date(fitEnd))) {
-    speeds.push(...(await series(chsCurrentFit.speedSeries, station, chunk)));
-    directions.push(...(await series(chsCurrentFit.directionSeries, station, chunk)));
+    fetched.push({
+      speeds: await series(chsCurrentFit.speedSeries, station, chunk),
+      directions: await series(chsCurrentFit.directionSeries, station, chunk),
+    });
   }
   const harmonic = (s: Sample[]) =>
     [...s].sort((a, b) => a.t - b.t).map((x) => ({ time: new Date(x.t), value: x.v }));
-  const projected = projectChsCurrent(harmonic(speeds), harmonic(directions), axis.flood);
 
   const out: ResultRow[] = [];
   for (const days of WINDOWS) {
-    // A shorter window is the trailing part of the same fetch, from the chunk
-    // the app's own plan for that window starts with.
-    const start = chunkPlan(days, new Date(fitEnd)).at(-1)!.start;
-    const samples = projected.filter((s) => s.time.getTime() >= start);
+    // A window fits exactly its own plan's chunks, as the app does, boundary
+    // duplicates kept. Both plans share the epoch grid and the end, so the
+    // window's chunks are the newest ones of the longest plan, already fetched.
+    const plan = chunkPlan(days, new Date(fitEnd));
+    const own = fetched.slice(0, plan.length);
+    const start = plan.at(-1)!.start;
+    const samples = projectChsCurrent(
+      harmonic(own.flatMap((c) => c.speeds)),
+      harmonic(own.flatMap((c) => c.directions)),
+      axis.flood,
+    );
     if (samples.length < 1 + 2 * chsCurrentFit.basis.length) {
       throw new GateDataError(
         `IWLS served ${samples.length} samples for the ${days}-day fit ending ${date}`,
