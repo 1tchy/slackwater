@@ -6,9 +6,9 @@
 // run writes rows, not verdicts; the results repository will pool a year of
 // them (docs/validation/chs-currents.md).
 //
-// GRID=-12..0 or GRID=-1,0 picks grid points, FIT_END=YYYY-MM-DD the one ending
-// that day, and neither the newest on or before today. WINDOWS=60,210,365 adds
-// the report-only 365-day window. GATES=path.json scores [{ id, latitude,
+// GRID=-13..-1 or GRID=-2,-1 picks grid points, FIT_END=YYYY-MM-DD the one
+// ending that day, and neither the newest on or before today. WINDOWS=60,210,365
+// adds the report-only 365-day window. GATES=path.json scores [{ id, latitude,
 // longitude }] in place of the curated gates in @slackwater/database.
 // NO_FLOORS=1 skips the share and p50 assertions but still checks for reversed
 // axes, requires every group short of the horizon, report-only windows
