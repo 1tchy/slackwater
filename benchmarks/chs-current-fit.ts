@@ -463,20 +463,24 @@ function series(code: string, station: IwlsStation, chunk: Chunk): Promise<Sampl
 
 // The run's own cache, keyed with both chunk ends. A value `keep` refuses, such
 // as an empty response or a series short of a full week with both endpoints,
-// is fetched again next run.
+// is fetched again next run. Reuse checks `keep` again, so an entry an older
+// rule kept is fetched again too.
 async function cached<T>(
   key: string,
   load: () => Promise<T>,
   keep: (value: T) => boolean = () => true,
 ) {
   const filePath = `./.test-cache/chs-current-fit-${key}.json`;
+  let stored: T | undefined;
   try {
-    return JSON.parse(await readFile(filePath, "utf-8")) as T;
+    stored = JSON.parse(await readFile(filePath, "utf-8")) as T;
   } catch {
-    const value = await load();
-    if (keep(value)) await writeFile(filePath, JSON.stringify(value));
-    return value;
+    // Not cached yet, or unreadable: fetch it.
   }
+  if (stored !== undefined && keep(stored)) return stored;
+  const value = await load();
+  if (keep(value)) await writeFile(filePath, JSON.stringify(value));
+  return value;
 }
 
 async function writeLines(path: string, items: object[]) {
