@@ -32,7 +32,7 @@ object ChsCurrentFit {
      * that moves one of those slacks by 30 seconds or more changes it. Store it with every
      * fitted model.
      */
-    const val STAMP = "c1e59ae33895"
+    const val STAMP = "8f85912ce223"
 
     /**
      * Signed velocity along the gate's flood axis: speed · cos(direction −

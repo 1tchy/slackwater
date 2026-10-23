@@ -68,7 +68,7 @@ export const chsCurrentFit = {
   days: [60, 210],
   sampleMinutes: 15,
   provisionalSlackMaxMinutes: 45,
-  stamp: "c1e59ae33895",
+  stamp: "8f85912ce223",
 } as const satisfies {
   speedSeries: string;
   directionSeries: string;
