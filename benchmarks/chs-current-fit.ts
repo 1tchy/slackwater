@@ -21,7 +21,13 @@ import { createWriteStream } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { stations } from "@slackwater/database";
-import { chsCurrentFit, createCurrentPredictor, fit, projectChsCurrent } from "@slackwater/engine";
+import {
+  chsCurrentFit,
+  createCurrentPredictor,
+  fit,
+  projectChsCurrent,
+  type HarmonicFit,
+} from "@slackwater/engine";
 import {
   BASE,
   IwlsError,
@@ -284,7 +290,15 @@ async function scoreGridPoint(
         `IWLS served ${samples.length} samples for the ${days}-day fit ending ${date}`,
       );
     }
-    const result = fit(samples, chsCurrentFit.basis);
+    let result: HarmonicFit;
+    try {
+      result = fit(samples, chsCurrentFit.basis);
+    } catch (error) {
+      // A series too short or degenerate to fit, such as a rank-deficient
+      // one, is the gate's own data problem, not a reason to end the run.
+      if (!(error instanceof RangeError)) throw error;
+      throw new GateDataError(`the ${days}-day fit ending ${date} failed: ${error.message}`);
+    }
     const predictor = createCurrentPredictor(result.constituents, {
       floodDirection: axis.flood,
       ebbDirection: axis.ebb,
