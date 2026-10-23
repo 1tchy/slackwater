@@ -46,14 +46,14 @@ jobs:
 
       # Branch pushes run the quick CHS current benchmark as a regression check.
       # The monthly schedule and manual dispatch on main run it in full on the
-      # newest grid point, with NO_FLOORS because the floors were set under
-      # scorer version 1 (#437), and the upload below keeps its rows. Pushes to
-      # main skip it. openwatersio/chs-current-validation will take over the
-      # full run and pool a year of rows per gate.
+      # newest grid point, and the upload below keeps its rows. Pushes to main
+      # skip it. Every run sets NO_FLOORS, because the floors were set under
+      # scorer version 1 (#437). openwatersio/chs-current-validation will take
+      # over the full run and pool a year of rows per gate.
       - name: Run CHS current fit benchmark
         if: ${{ !cancelled() && (env.FAST != '' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
         env:
-          NO_FLOORS: ${{ env.FAST == '' && '1' || '' }}
+          NO_FLOORS: "1"
         run: npm run chs-current-fit
 
       - name: Upload benchmark results
