@@ -5,7 +5,7 @@
 import { MATCH_WINDOW_MIN } from "./chs-current-grid.ts";
 import { parseEventDate } from "./iwls.ts";
 
-/** Bumped whenever a scoring rule changes, so rows scored under different rules never pool. */
+/** Bumped whenever a rule changes how this benchmark fits or scores (the fetch plan, the fit end, padding, pairing), so rows from different rules never pool. */
 export const SCORER_VERSION = 2;
 /** CHS extrema weaker than this get no timing or speed score: the peak of a weak drift is noise. */
 export const SIGNIFICANT_KN = 0.75;
@@ -59,6 +59,10 @@ export function parseEvents(raw: unknown): ScoreEvent[] {
       if (kind === "slack") return [{ time, kind, speed: 0 }];
       if (typeof row.value !== "number") {
         throw new Error(`wcp1-events ${row.qualifier} at ${row.eventDate} has no speed`);
+      }
+      // CHS publishes magnitudes, so a negative one would flip the sign the qualifier gives.
+      if (row.value < 0) {
+        throw new Error(`wcp1-events ${row.qualifier} at ${row.eventDate} has a negative speed`);
       }
       return [{ time, kind, speed: kind === "maxEbb" ? -row.value : row.value }];
     })

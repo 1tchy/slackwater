@@ -105,4 +105,9 @@ describe("selectGrid", () => {
       RangeError,
     );
   });
+
+  test("refuses an empty GRID or FIT_END rather than falling back to the default", () => {
+    expect(() => selectGrid({ GRID: "" }, "2026-10-29")).toThrow(RangeError);
+    expect(() => selectGrid({ FIT_END: "" }, "2026-10-29")).toThrow(RangeError);
+  });
 });

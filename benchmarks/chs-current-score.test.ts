@@ -154,6 +154,14 @@ describe("parseEvents", () => {
     ).toThrow(/speed/);
   });
 
+  test("stops on a negative extremum speed, since CHS publishes magnitudes", () => {
+    for (const qualifier of ["EXTREMA_FLOOD", "EXTREMA_EBB"]) {
+      expect(() =>
+        parseEvents([{ eventDate: "2026-11-05T00:00:00Z", qualifier, value: -1.2 }]),
+      ).toThrow(/negative/);
+    }
+  });
+
   test("refuses anything but an array", () => {
     expect(() => parseEvents({})).toThrow(TypeError);
   });

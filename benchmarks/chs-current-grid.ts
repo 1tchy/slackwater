@@ -63,6 +63,9 @@ export function withinHorizon(
  * before `today`. A grid point after today has no fit a device could hold yet.
  */
 export function selectGrid(env: { GRID?: string; FIT_END?: string }, today: string): number[] {
+  // An empty value is a mistake, such as an unset CI input, not a request for the default.
+  if (env.GRID === "") throw new RangeError("GRID is set but empty");
+  if (env.FIT_END === "") throw new RangeError("FIT_END is set but empty");
   if (env.GRID && env.FIT_END) throw new RangeError("set GRID or FIT_END, not both");
   const newest = gridIndexOnOrBefore(today);
   let points: number[];
