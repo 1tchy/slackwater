@@ -11,7 +11,8 @@
 // the report-only 365-day window. GATES=path.json scores [{ id, latitude,
 // longitude }] in place of the curated gates in @slackwater/database.
 // NO_FLOORS=1 skips the reversed-axis, share and p50 assertions but still
-// requires every group short of the horizon to have scored rows. FAST=1 scores
+// requires every group short of the horizon, report-only windows included, to
+// have scored rows, and the run to have at least one. FAST=1 scores
 // three gates at +28 d. OUT=dir writes the outputs somewhere other than
 // benchmarks/.
 import { expect } from "vitest";
@@ -50,6 +51,7 @@ import {
   summarize,
   type GateRecord,
   type ResultRow,
+  type RowStatus,
   type ScoreEvent,
   type WeekScore,
 } from "./chs-current-score.ts";
@@ -185,8 +187,10 @@ expect(
   "gates resolved to the same IWLS station",
 ).toEqual([]);
 
+// The floors hold the recipe's own windows, never a report-only one.
+const recipeDays: readonly number[] = chsCurrentFit.days;
 for (const i of grid) {
-  for (const days of chsCurrentFit.days.filter((d) => WINDOWS.includes(d))) {
+  for (const days of WINDOWS) {
     for (const offset of OFFSETS) {
       const group = rows.filter(
         (r) => r.grid === i && r.fit_days === days && r.offset_days === offset,
@@ -207,12 +211,13 @@ for (const i of grid) {
         passing,
         p50SlackMedianMin: p50,
       });
-      // An empty group is a failure, not a skip, even under NO_FLOORS: every
-      // gate recording a reason would otherwise pass vacuously.
+      // An empty group is a failure, not a skip, even under NO_FLOORS and for a
+      // report-only window: every gate recording a reason would otherwise pass
+      // vacuously.
       const allBeyond = group.length > 0 && group.every((r) => r.status === "beyond_horizon");
       if (allBeyond) continue;
       expect(scored.length, `grid ${i} ${days} d +${offset} d gates scored`).toBeGreaterThan(0);
-      if (NO_FLOORS) continue;
+      if (NO_FLOORS || !recipeDays.includes(days)) continue;
       expect(
         scored.filter((s) => s.reversed).length,
         `grid ${i} ${days} d +${offset} d reversed axes`,
@@ -230,6 +235,14 @@ for (const i of grid) {
     }
   }
 }
+// Every group above is skipped when every week lies beyond the horizon, as
+// when every gate's current-year probe came back empty, so the run as a whole
+// must still have scored something.
+const counted = (status: RowStatus) => rows.filter((r) => r.status === status).length;
+expect(
+  counted("scored"),
+  `rows scored (${counted("beyond_horizon")} beyond the horizon, ${counted("no_events")} with no events)`,
+).toBeGreaterThan(0);
 
 async function scoreGridPoint(
   gate: Gate,
