@@ -196,14 +196,24 @@ export function scoreWeek({
   return { slack_errors, invented, extremum_errors, speed_errors, extrema, wrong_sign };
 }
 
-/** Rounds a week's errors for publication: minutes to a tenth, knots to a hundredth. */
+/**
+ * Rounds a week's errors up for publication: minutes to the next tenth, knots
+ * to the next hundredth. Every bar (15, 20, 30 and 45 minutes, 0.5 kn) sits on
+ * that grid, so a rounded error meets a bar exactly when the raw error does,
+ * and no bound computed from rows comes out tighter than the truth. A median
+ * of an even count averages two rounded errors, so it can come out above the
+ * raw median, never below. The guard keeps float noise such as
+ * 15.000000000000002 on its grid point, and errors are never negative, so a
+ * zero stays 0 rather than -0.
+ */
 export function rounded(score: WeekScore): WeekScore {
-  const to = (digits: number) => (x: number) => Math.round(x * 10 ** digits) / 10 ** digits;
+  const up = (digits: number) => (x: number) =>
+    Math.max(0, Math.ceil(x * 10 ** digits - 1e-9)) / 10 ** digits;
   return {
     ...score,
-    slack_errors: score.slack_errors.map((e) => (e === null ? null : to(1)(e))),
-    extremum_errors: score.extremum_errors.map(to(1)),
-    speed_errors: score.speed_errors.map(to(2)),
+    slack_errors: score.slack_errors.map((e) => (e === null ? null : up(1)(e))),
+    extremum_errors: score.extremum_errors.map(up(1)),
+    speed_errors: score.speed_errors.map(up(2)),
   };
 }
 

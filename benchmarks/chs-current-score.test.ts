@@ -220,17 +220,58 @@ describe("summarize", () => {
 });
 
 describe("rounded", () => {
-  test("rounds minutes to a tenth and knots to a hundredth, keeping missed slacks", () => {
-    const r = rounded({
-      slack_errors: [1.234, null],
-      invented: 0,
-      extremum_errors: [9.876],
-      speed_errors: [0.12345],
-      extrema: 1,
-      wrong_sign: 0,
-    });
-    expect(r.slack_errors).toEqual([1.2, null]);
+  const errors = (s: Partial<WeekScore>): WeekScore => ({
+    slack_errors: [],
+    invented: 0,
+    extremum_errors: [],
+    speed_errors: [],
+    extrema: 0,
+    wrong_sign: 0,
+    ...s,
+  });
+
+  test("rounds minutes up to a tenth and knots up to a hundredth, keeping missed slacks", () => {
+    const r = rounded(
+      errors({
+        slack_errors: [1.234, null],
+        extremum_errors: [9.876],
+        speed_errors: [0.12345],
+        extrema: 1,
+      }),
+    );
+    expect(r.slack_errors).toEqual([1.3, null]);
     expect(r.extremum_errors).toEqual([9.9]);
-    expect(r.speed_errors).toEqual([0.12]);
+    expect(r.speed_errors).toEqual([0.13]);
+  });
+
+  test("never rounds an error down past a bar", () => {
+    const r = rounded(errors({ slack_errors: [30.04, 45.04], speed_errors: [0.504] }));
+    expect(r.slack_errors).toEqual([30.1, 45.1]);
+    expect(r.speed_errors).toEqual([0.51]);
+  });
+
+  test("keeps an error already on the grid, float noise included", () => {
+    const r = rounded(errors({ slack_errors: [30.0, 15.000000000000002, 0], speed_errors: [0] }));
+    expect(r.slack_errors).toEqual([30.0, 15.0, 0]);
+    expect(r.speed_errors).toEqual([0]);
+  });
+
+  test("fails a week whose raw worst slack is just past the bar", () => {
+    const week = errors({
+      slack_errors: [5, 5, 30.04],
+      extremum_errors: [10],
+      speed_errors: [0.1],
+      extrema: 1,
+    });
+    expect(summarize(rounded(week))).toMatchObject({
+      slack_median_min: 5,
+      slack_worst_min: 30.1,
+      extremum_median_min: 10,
+      speed_median_kn: 0.1,
+      missed: 0,
+      invented: 0,
+      reversed: false,
+      pass: false,
+    });
   });
 });
