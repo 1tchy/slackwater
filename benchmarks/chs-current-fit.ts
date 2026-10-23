@@ -10,8 +10,10 @@
 // that day, and neither the newest on or before today. WINDOWS=60,210,365 adds
 // the report-only 365-day window. GATES=path.json scores [{ id, latitude,
 // longitude }] in place of the curated gates in @slackwater/database.
-// NO_FLOORS=1 records without asserting the share floors. FAST=1 scores three
-// gates at +28 d. OUT=dir writes the outputs somewhere other than benchmarks/.
+// NO_FLOORS=1 skips the reversed-axis, share and p50 assertions but still
+// requires every group short of the horizon to have scored rows. FAST=1 scores
+// three gates at +28 d. OUT=dir writes the outputs somewhere other than
+// benchmarks/.
 import { expect } from "vitest";
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
@@ -22,6 +24,7 @@ import { chsCurrentFit, createCurrentPredictor, fit, projectChsCurrent } from "@
 import {
   BASE,
   IwlsError,
+  canCache,
   chunkPlan,
   createClient,
   localMidnight,
@@ -72,6 +75,7 @@ const CANARY: Chunk = {
 };
 // Malibu Rapids' slack derives from a tide port; it has no current station.
 const NOT_FITTED = new Set(["chs-malibu-rapids"]);
+const NOT_FITTED_REASON = "not fitted: its slack derives from a tide port";
 
 /** A gate's own data problem: recorded as its reason, and the run goes on. */
 class GateDataError extends Error {}
@@ -90,9 +94,10 @@ const curated: Gate[] = process.env.GATES
   : stations.filter(
       (s) => s.kind === "current" && s.source.name === "Canadian Hydrographic Service",
     );
+const byId = (a: Gate, b: Gate) => a.id.localeCompare(b.id);
 const gates = curated
   .filter((g) => !NOT_FITTED.has(g.id))
-  .sort((a, b) => a.id.localeCompare(b.id))
+  .sort(byId)
   .slice(0, FAST ? 3 : Infinity);
 
 console.log(
@@ -100,9 +105,23 @@ console.log(
     `(fits ending ${grid.map(fitEndDate).join(", ")}), held out at +${OFFSETS.join(", +")} d, stamp ${chsCurrentFit.stamp}`,
 );
 
-const list = await cached("stations", () => iwls.stationList());
+const servesSpeed = (s: IwlsStation) =>
+  s.timeSeries.some((t) => t.code === chsCurrentFit.speedSeries);
+// A list with no current station would give every gate the same reason, so it
+// is never cached and it ends the run instead.
+const list = await cached(
+  "stations",
+  () => iwls.stationList(),
+  (l) => l.some(servesSpeed),
+);
+if (!list.some(servesSpeed)) {
+  throw new Error(`the IWLS station list has no station serving ${chsCurrentFit.speedSeries}`);
+}
 const rows: ResultRow[] = [];
-const records: GateRecord[] = [];
+const records: GateRecord[] = curated
+  .filter((g) => NOT_FITTED.has(g.id))
+  .sort(byId)
+  .map((g) => ({ gate: g.id, reason: NOT_FITTED_REASON }));
 
 for (const gate of gates) {
   const record: GateRecord = { gate: gate.id };
@@ -186,11 +205,12 @@ for (const i of grid) {
         passing,
         p50SlackMedianMin: p50,
       });
-      // An empty group is a failure, not a skip: every gate recording a reason
-      // would otherwise pass vacuously.
+      // An empty group is a failure, not a skip, even under NO_FLOORS: every
+      // gate recording a reason would otherwise pass vacuously.
       const allBeyond = group.length > 0 && group.every((r) => r.status === "beyond_horizon");
-      if (NO_FLOORS || allBeyond) continue;
+      if (allBeyond) continue;
       expect(scored.length, `grid ${i} ${days} d +${offset} d gates scored`).toBeGreaterThan(0);
+      if (NO_FLOORS) continue;
       expect(
         scored.filter((s) => s.reversed).length,
         `grid ${i} ${days} d +${offset} d reversed axes`,
@@ -312,8 +332,16 @@ async function eventHorizon(station: IwlsStation): Promise<number> {
   let horizon = Date.UTC(thisYear, 0, 1);
   for (let year = thisYear; year < thisYear + 5; year++) {
     const end = Date.UTC(year + 1, 0, 1);
-    if (parseEvents(await iwls.get(eventsURL(station, end - WEEK_DAYS * DAY, end))).length === 0)
-      break;
+    let published: ScoreEvent[];
+    try {
+      published = parseEvents(await iwls.get(eventsURL(station, end - WEEK_DAYS * DAY, end)));
+    } catch (error) {
+      // A permanent refusal of a later year means CHS has not published it,
+      // not that the gate is broken.
+      if (year > thisYear && error instanceof IwlsError && error.kind === "permanent") break;
+      throw error;
+    }
+    if (published.length === 0) break;
     horizon = end;
   }
   return horizon;
@@ -355,12 +383,13 @@ function series(code: string, station: IwlsStation, chunk: Chunk): Promise<Sampl
   return cached(
     `${station.id}-${code}-${chunk.start / 1000}-${chunk.end / 1000}-step${chsCurrentFit.sampleMinutes}m`,
     () => iwls.series(code, station.id, chunk, undefined, chsCurrentFit.sampleMinutes),
-    (samples) => samples.length > 0,
+    (samples) => canCache(chunk, samples, chsCurrentFit.sampleMinutes),
   );
 }
 
-// The run's own cache, keyed with both chunk ends so a partial week is never
-// mistaken for a full one. Empty responses are fetched again next run.
+// The run's own cache, keyed with both chunk ends. A value `keep` refuses, such
+// as an empty response or a series short of a full week with both endpoints,
+// is fetched again next run.
 async function cached<T>(
   key: string,
   load: () => Promise<T>,
