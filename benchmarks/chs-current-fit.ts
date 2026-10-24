@@ -294,7 +294,7 @@ const counted = (status: RowStatus) => rows.filter((r) => r.status === status).l
 if (!ROWS_ONLY) {
   expect(
     counted("scored"),
-    `rows scored (${counted("beyond_horizon")} beyond the horizon, ${counted("no_events")} with no events)`,
+    `rows scored (${counted("beyond_horizon")} beyond the horizon, ${counted("no_events")} with no slack or extremum)`,
   ).toBeGreaterThan(0);
 }
 
@@ -415,7 +415,7 @@ async function scoreGridPoint(
 }
 
 // CHS publishes events a calendar year at a time. The horizon is the end of
-// the last year whose final week has a slack or extremum, probing forward from this one.
+// the last year whose final week has events, probing forward from this one.
 // Never cached: a cached answer would hide next year's publication.
 async function eventHorizon(station: IwlsStation): Promise<number> {
   const thisYear = new Date().getUTCFullYear();
@@ -431,7 +431,8 @@ async function eventHorizon(station: IwlsStation): Promise<number> {
       if (year > thisYear && error instanceof IwlsError && error.kind === "permanent") break;
       throw error;
     }
-    if (!hasSlackOrExtremum(published)) break;
+    // Any event counts: a weak-and-variable event alone still means CHS published the year.
+    if (published.length === 0) break;
     horizon = end;
   }
   return horizon;

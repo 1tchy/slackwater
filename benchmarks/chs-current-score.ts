@@ -5,7 +5,7 @@
 import { CONTEXT_MIN, MATCH_WINDOW_MIN } from "./chs-current-grid.ts";
 import { parseEventDate } from "./iwls.ts";
 
-/** Bumped whenever a rule changes how this benchmark fits or scores (the fetch plan, the fit end, pairing context, pairing), so the results repository can pool only rows scored by the same rules. Version 3: a pair of predicted slacks around a CHS weak-and-variable event, with a weak predicted reversal between them, is not invented. */
+/** Bumped whenever a rule changes how this benchmark fits or scores (the fetch plan, the fit end, event parsing, pairing context, pairing), so the results repository can pool only rows scored by the same rules. It also keys the events cache, which holds parsed events, so a parsing change without a bump would reuse events parsed by the old rule. Version 3: a pair of predicted slacks around a CHS weak-and-variable event, with a weak predicted reversal between them, is not invented. */
 export const SCORER_VERSION = 3;
 /** CHS extrema weaker than this get no timing or speed score: the peak of a weak drift is noise. */
 export const SIGNIFICANT_KN = 0.75;
