@@ -56,6 +56,7 @@ import {
 } from "./chs-current-grid.ts";
 import {
   SCORER_VERSION,
+  hasSlackOrExtremum,
   parseEvents,
   rounded,
   scoreWeek,
@@ -293,7 +294,7 @@ const counted = (status: RowStatus) => rows.filter((r) => r.status === status).l
 if (!ROWS_ONLY) {
   expect(
     counted("scored"),
-    `rows scored (${counted("beyond_horizon")} beyond the horizon, ${counted("no_events")} with no events)`,
+    `rows scored (${counted("beyond_horizon")} beyond the horizon, ${counted("no_events")} with no slack or extremum)`,
   ).toBeGreaterThan(0);
 }
 
@@ -385,7 +386,7 @@ async function scoreGridPoint(
         continue;
       }
       const observed = await events(station, weekStart - CONTEXT, weekEnd + CONTEXT);
-      if (!observed.some((e) => e.time >= weekStart && e.time < weekEnd)) {
+      if (!hasSlackOrExtremum(observed.filter((e) => e.time >= weekStart && e.time < weekEnd))) {
         out.push({ ...base, status: "no_events" });
         continue;
       }
@@ -430,6 +431,7 @@ async function eventHorizon(station: IwlsStation): Promise<number> {
       if (year > thisYear && error instanceof IwlsError && error.kind === "permanent") break;
       throw error;
     }
+    // Any event counts: a weak-and-variable event alone still means CHS published the year.
     if (published.length === 0) break;
     horizon = end;
   }
@@ -463,7 +465,8 @@ function eventsURL(station: IwlsStation, from: number, to: number): URL {
 // limit. An event on the instant two requests share comes back from both.
 function events(station: IwlsStation, from: number, to: number): Promise<ScoreEvent[]> {
   return cached(
-    `${station.id}-wcp1-events-${from / 1000}-${to / 1000}`,
+    // The cache holds parsed events, so a scorer that parses differently must refetch them.
+    `${station.id}-wcp1-events-scorer${SCORER_VERSION}-${from / 1000}-${to / 1000}`,
     async () => {
       const all: ScoreEvent[] = [];
       for (const [a, b] of requestSpans(from, to)) {

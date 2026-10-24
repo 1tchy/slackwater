@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  hasSlackOrExtremum,
   pairSlacks,
   parseEvents,
   rounded,
@@ -23,6 +24,7 @@ const ebb = (minutes: number, speed: number): ScoreEvent => ({
   kind: "maxEbb",
   speed,
 });
+const weak = (minutes: number): ScoreEvent => ({ time: at(minutes), kind: "weak", speed: 0 });
 const week = (observed: ScoreEvent[], predicted: ScoreEvent[], velocityAt = () => 1) =>
   scoreWeek({ start, end, observed, predicted, velocityAt });
 
@@ -133,6 +135,100 @@ describe("scoreWeek", () => {
       speed_errors: [],
     });
   });
+
+  test("does not count a predicted slack pair around a CHS weak-and-variable event as invented", () => {
+    // Active Pass at neaps: CHS publishes ebb, weak and variable, ebb where the model reverses for an hour.
+    const score = week(
+      [slack(526), ebb(698, -1.6), weak(1000), ebb(1361, -2.9), slack(1575)],
+      [
+        slack(530),
+        ebb(700, -1.5),
+        slack(940),
+        flood(1003, 0.2),
+        slack(1060),
+        ebb(1358, -2.8),
+        slack(1572),
+      ],
+      () => -1,
+    );
+    expect(score).toMatchObject({ slack_errors: [4, 3], invented: 0, extrema: 2, wrong_sign: 0 });
+  });
+
+  test("still counts a predicted slack pair around a strong predicted reversal as invented", () => {
+    expect(week([weak(1000)], [slack(940), flood(1003, 2.5), slack(1060)]).invented).toBe(2);
+    expect(week([weak(1000)], [slack(940), flood(1003, 0.75), slack(1060)]).invented).toBe(2);
+    expect(
+      week([weak(1000)], [slack(940), flood(970, 0.2), flood(1030, 2.5), slack(1060)]).invented,
+    ).toBe(2);
+  });
+
+  test("still counts a predicted slack pair with no predicted extremum between them as invented", () => {
+    expect(week([weak(1000)], [slack(940), slack(1060)]).invented).toBe(2);
+  });
+
+  test("still counts a predicted slack pair with no weak-and-variable event between them", () => {
+    expect(week([weak(900)], [slack(940), flood(1000, 0.2), slack(1060)]).invented).toBe(2);
+  });
+
+  test("excuses nothing when only one unpaired predicted slack lies beside a weak-and-variable event", () => {
+    expect(week([weak(1000)], [slack(1060)]).invented).toBe(1);
+    expect(week([weak(1000)], [slack(940)]).invented).toBe(1);
+    expect(
+      week([slack(940), weak(1000)], [slack(940), flood(1000, 0.2), slack(1060)]).invented,
+    ).toBe(1);
+  });
+
+  test("still counts a predicted slack pair farther than the window from a weak-and-variable event", () => {
+    expect(week([weak(1000)], [slack(819), flood(940, 0.2), slack(1060)]).invented).toBe(2);
+    expect(week([weak(1000)], [slack(940), flood(1060, 0.2), slack(1181)]).invented).toBe(2);
+  });
+
+  test("excuses a predicted slack pair exactly the window from a weak-and-variable event", () => {
+    expect(week([weak(1000)], [slack(820), flood(1000, 0.2), slack(1180)]).invented).toBe(0);
+  });
+
+  test("counts a predicted slack at a weak-and-variable event's own time as the slack before it", () => {
+    expect(week([weak(1000)], [slack(1000), flood(1050, 0.2), slack(1100)]).invented).toBe(0);
+    expect(week([weak(1000)], [slack(900), flood(950, 0.2), slack(1000)]).invented).toBe(2);
+  });
+
+  test("lets a weak-and-variable event excuse one pair, and a predicted slack be excused once", () => {
+    expect(
+      week([weak(1000)], [slack(880), slack(940), flood(1000, 0.2), slack(1060), slack(1120)])
+        .invented,
+    ).toBe(2);
+    expect(
+      week(
+        [weak(1000), weak(1120)],
+        [slack(940), flood(1000, 0.2), slack(1060), ebb(1120, -0.2), slack(1180)],
+      ).invented,
+    ).toBe(1);
+  });
+
+  test("excuses a pair straddling the week's edge from either week", () => {
+    const observed = [weak(-10)];
+    const predicted = [slack(-70), flood(-10, 0.2), slack(50)];
+    expect(week(observed, predicted).invented).toBe(0);
+    const before = scoreWeek({
+      start: start - 7 * 86_400_000,
+      end: start,
+      observed,
+      predicted,
+      velocityAt: () => 1,
+    });
+    expect(before.invented).toBe(0);
+  });
+
+  test("never counts a weak-and-variable event as an extremum or a wrong sign", () => {
+    for (const v of [-1, 1]) {
+      expect(week([weak(1000)], [], () => v)).toMatchObject({
+        extrema: 0,
+        wrong_sign: 0,
+        extremum_errors: [],
+        speed_errors: [],
+      });
+    }
+  });
 });
 
 describe("parseEvents", () => {
@@ -146,6 +242,18 @@ describe("parseEvents", () => {
       { time: Date.UTC(2026, 10, 5, 0), kind: "maxFlood", speed: 3 },
       { time: Date.UTC(2026, 10, 5, 3), kind: "slack", speed: 0 },
       { time: Date.UTC(2026, 10, 5, 6), kind: "maxEbb", speed: -2.5 },
+    ]);
+  });
+
+  test("reads a weak-and-variable row as a weak event at speed 0, with or without a value", () => {
+    const events = parseEvents([
+      { eventDate: "2026-11-05T06:00:00Z", qualifier: "WEAK_AND_VARIABLE" },
+      { eventDate: "2026-11-05T03:00:00Z", qualifier: "OTHER", value: 0 },
+      { eventDate: "2026-11-05T00:00:00Z", qualifier: "WEAK_AND_VARIABLE", value: 0 },
+    ]);
+    expect(events).toEqual([
+      { time: Date.UTC(2026, 10, 5, 0), kind: "weak", speed: 0 },
+      { time: Date.UTC(2026, 10, 5, 6), kind: "weak", speed: 0 },
     ]);
   });
 
@@ -180,6 +288,19 @@ describe("parseEvents", () => {
 
   test("refuses anything but an array", () => {
     expect(() => parseEvents({})).toThrow(TypeError);
+  });
+});
+
+describe("hasSlackOrExtremum", () => {
+  test("finds nothing to score in weak-and-variable events alone", () => {
+    expect(hasSlackOrExtremum([])).toBe(false);
+    expect(hasSlackOrExtremum([weak(1000), weak(2500)])).toBe(false);
+  });
+
+  test("finds a slack, a flood or an ebb", () => {
+    expect(hasSlackOrExtremum([weak(1000), slack(1060)])).toBe(true);
+    expect(hasSlackOrExtremum([flood(100, 1.2)])).toBe(true);
+    expect(hasSlackOrExtremum([weak(1000), ebb(1361, -2.9)])).toBe(true);
   });
 });
 
