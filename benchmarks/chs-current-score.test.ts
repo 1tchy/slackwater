@@ -170,7 +170,7 @@ describe("scoreWeek", () => {
     expect(week([weak(900)], [slack(940), flood(1000, 0.2), slack(1060)]).invented).toBe(0);
   });
 
-  test("excuses a weak predicted slack pair that lies wholly after the event", () => {
+  test("excuses a weak predicted slack pair that lies wholly before the event", () => {
     // Johnstone Strait Central: CHS stamps the weak event after the model's lull has ended.
     expect(week([weak(1000)], [slack(900), flood(930, 0.01), slack(980)]).invented).toBe(0);
     // The model's next slack, hours away, is the only one left to count.
@@ -180,7 +180,7 @@ describe("scoreWeek", () => {
     ).toBe(1);
   });
 
-  test("excuses a weak predicted slack pair that lies wholly before the event", () => {
+  test("excuses a weak predicted slack pair that lies wholly after the event", () => {
     expect(week([weak(1000)], [slack(1001), flood(1015, 0.01), slack(1031)]).invented).toBe(0);
   });
 
