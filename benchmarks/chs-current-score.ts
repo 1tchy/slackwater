@@ -161,8 +161,13 @@ export function pairSlacks(
  * CHS's event need not fall at the lull's centre, so the model's pair need not
  * bracket it. A pair is as far as the event is from its nearer slack, or 0
  * when the event lies between them, ends included; of two equally near pairs
- * the earlier is excused. A slack is excused once. Events within CONTEXT_MIN of
- * the week count, so a pair straddling the week's edge is judged the same from
+ * the earlier is excused. A slack is excused once, and events take their pairs
+ * in time order. Two events can reach the same pair only when they lie within
+ * 2 * MATCH_WINDOW_MIN of each other, and CHS's weak events are at least ten
+ * hours apart where checked (docs/validation/chs-currents.md); only then can
+ * the order, or an event in one week's context but not the other's, change a
+ * count. Events within CONTEXT_MIN of the week
+ * count, so a pair straddling the week's edge is otherwise judged the same from
  * either week. The event is not an extremum.
  */
 export function scoreWeek({
