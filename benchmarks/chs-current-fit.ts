@@ -56,6 +56,7 @@ import {
 } from "./chs-current-grid.ts";
 import {
   SCORER_VERSION,
+  hasSlackOrExtremum,
   parseEvents,
   rounded,
   scoreWeek,
@@ -385,7 +386,7 @@ async function scoreGridPoint(
         continue;
       }
       const observed = await events(station, weekStart - CONTEXT, weekEnd + CONTEXT);
-      if (!observed.some((e) => e.time >= weekStart && e.time < weekEnd)) {
+      if (!hasSlackOrExtremum(observed.filter((e) => e.time >= weekStart && e.time < weekEnd))) {
         out.push({ ...base, status: "no_events" });
         continue;
       }
@@ -414,7 +415,7 @@ async function scoreGridPoint(
 }
 
 // CHS publishes events a calendar year at a time. The horizon is the end of
-// the last year whose final week has events, probing forward from this one.
+// the last year whose final week has a slack or extremum, probing forward from this one.
 // Never cached: a cached answer would hide next year's publication.
 async function eventHorizon(station: IwlsStation): Promise<number> {
   const thisYear = new Date().getUTCFullYear();
@@ -430,7 +431,7 @@ async function eventHorizon(station: IwlsStation): Promise<number> {
       if (year > thisYear && error instanceof IwlsError && error.kind === "permanent") break;
       throw error;
     }
-    if (published.length === 0) break;
+    if (!hasSlackOrExtremum(published)) break;
     horizon = end;
   }
   return horizon;

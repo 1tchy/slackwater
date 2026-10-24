@@ -5,7 +5,7 @@
 import { CONTEXT_MIN, MATCH_WINDOW_MIN } from "./chs-current-grid.ts";
 import { parseEventDate } from "./iwls.ts";
 
-/** Bumped whenever a rule changes how this benchmark fits or scores (the fetch plan, the fit end, pairing context, pairing), so the results repository can pool only rows scored by the same rules. Version 3: a pair of predicted slacks around a CHS weak-and-variable event is not invented. */
+/** Bumped whenever a rule changes how this benchmark fits or scores (the fetch plan, the fit end, pairing context, pairing), so the results repository can pool only rows scored by the same rules. Version 3: a pair of predicted slacks around a CHS weak-and-variable event, with a weak predicted reversal between them, is not invented. */
 export const SCORER_VERSION = 3;
 /** CHS extrema weaker than this get no timing or speed score: the peak of a weak drift is noise. */
 export const SIGNIFICANT_KN = 0.75;
@@ -76,6 +76,17 @@ export function parseEvents(raw: unknown): ScoreEvent[] {
     .sort((a, b) => a.time - b.time);
 }
 
+const isExtremum = (e: ScoreEvent) => e.kind === "maxFlood" || e.kind === "maxEbb";
+
+/**
+ * Whether CHS published anything to score among these events. Weak-and-variable
+ * events alone are not enough: with no CHS slack to pair with, every predicted
+ * slack would read as invented.
+ */
+export function hasSlackOrExtremum(events: readonly ScoreEvent[]): boolean {
+  return events.some((e) => e.kind === "slack" || isExtremum(e));
+}
+
 interface Matching {
   gapMs: number;
   observedSum: number;
@@ -143,11 +154,13 @@ export function pairSlacks(
  *
  * A CHS weak-and-variable event stands for a reversal CHS publishes no slacks
  * for, so it excuses the two predicted slacks either side of it when neither
- * paired, no predicted slack lies between them, and each is within
- * MATCH_WINDOW_MIN of the event. An event excuses one pair and a slack is
- * excused once. Events within CONTEXT_MIN of the week count, so a pair
- * straddling the week's edge is judged the same from either week. The event
- * is not an extremum.
+ * paired, no predicted slack lies between them, each is within
+ * MATCH_WINDOW_MIN of the event, and the model's reversal between them is
+ * weak too: it has a predicted extremum, and every one is under SIGNIFICANT_KN.
+ * A predicted slack at the event's own time counts as the one before it. An
+ * event excuses one pair and a slack is excused once. Events within
+ * CONTEXT_MIN of the week count, so a pair straddling the week's edge is
+ * judged the same from either week. The event is not an extremum.
  */
 export function scoreWeek({
   start,
@@ -185,7 +198,11 @@ export function scoreWeek({
     const pair = [after - 1, after];
     const excusable = (p: number) =>
       !paired.has(p) && !excused.has(p) && Math.abs(pred[p] - w) / 60_000 <= MATCH_WINDOW_MIN;
-    if (pair.every(excusable)) for (const p of pair) excused.add(p);
+    const peaks = predicted.filter(
+      (e) => isExtremum(e) && e.time > pred[after - 1] && e.time < pred[after],
+    );
+    const weakReversal = peaks.length > 0 && peaks.every((e) => Math.abs(e.speed) < SIGNIFICANT_KN);
+    if (weakReversal && pair.every(excusable)) for (const p of pair) excused.add(p);
   }
 
   const slack_errors = obs.flatMap((t, o) => {
@@ -200,7 +217,7 @@ export function scoreWeek({
   let extrema = 0;
   let wrong_sign = 0;
   for (const e of observed) {
-    if ((e.kind !== "maxFlood" && e.kind !== "maxEbb") || !inWeek(e.time)) continue;
+    if (!isExtremum(e) || !inWeek(e.time)) continue;
     extrema++;
     // The sign of the model's velocity at CHS's own extremum tests for a
     // reversed axis; a matched event's sign would only say which event matched.
