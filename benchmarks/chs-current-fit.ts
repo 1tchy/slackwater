@@ -3,7 +3,7 @@
 // `wcp1-events`. The fit inputs follow the IWLS fetching contract
 // (docs/iwls-fetch.md): the window ends at the gate's local midnight on a
 // grid point's date (chs-current-grid.ts) and spans the app's chunk plan. The
-// run writes rows, not verdicts; the results repository will pool a year of
+// run writes rows, not verdicts; the results repository pools a year of
 // them (docs/validation/chs-currents.md).
 //
 // GRID=-13..-1 or GRID=-2,-1 picks grid points, FIT_END=YYYY-MM-DD the one
@@ -257,9 +257,9 @@ for (const i of grid) {
       if (allBeyond) continue;
       // In ROWS_ONLY a shard's groups can be empty when its gates all have a
       // reason or a failure, as a one-gate backfill can, and a reversed axis is
-      // one gate's disqualifier. The results repository will check across every
-      // shard that each grid point, window and held-out week short of the
-      // horizon scored a gate.
+      // one gate's disqualifier. The results repository checks across every
+      // shard that each grid point, recipe window and held-out week short of
+      // the horizon scored a gate.
       if (ROWS_ONLY) continue;
       expect(scored.length, `grid ${i} ${days} d +${offset} d gates scored`).toBeGreaterThan(0);
       if (!recipeDays.includes(days)) continue;
@@ -287,8 +287,8 @@ for (const i of grid) {
 }
 // Every group above is skipped when every week lies beyond the horizon, as
 // when every gate's current-year probe came back empty, so the run as a whole
-// must still have scored something. In ROWS_ONLY the results repository will
-// check that across every shard, since a one-gate shard's gate can have a
+// must still have scored something. In ROWS_ONLY the results repository
+// checks that across every shard, since a one-gate shard's gate can have a
 // reason in place of rows.
 const counted = (status: RowStatus) => rows.filter((r) => r.status === status).length;
 if (!ROWS_ONLY) {

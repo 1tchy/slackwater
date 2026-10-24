@@ -1,5 +1,5 @@
 // The fit-end grid benchmarks/chs-current-fit.ts scores on, shared with the
-// results repository that will pool its rows. Grid point i's fit ends on
+// results repository, which pools its rows. Grid point i's fit ends on
 // ANCHOR + 28i + 7(i mod 4) days. A plain 28-day grid sits 0.45 days off the
 // 27.55-day anomalistic month, which would hold every held-out age to a
 // five-day slice of the perigee cycle; staggering the fit end by whole weeks
