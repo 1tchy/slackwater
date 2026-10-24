@@ -463,7 +463,8 @@ function eventsURL(station: IwlsStation, from: number, to: number): URL {
 // limit. An event on the instant two requests share comes back from both.
 function events(station: IwlsStation, from: number, to: number): Promise<ScoreEvent[]> {
   return cached(
-    `${station.id}-wcp1-events-${from / 1000}-${to / 1000}`,
+    // The cache holds parsed events, so a scorer that parses differently must refetch them.
+    `${station.id}-wcp1-events-scorer${SCORER_VERSION}-${from / 1000}-${to / 1000}`,
     async () => {
       const all: ScoreEvent[] = [];
       for (const [a, b] of requestSpans(from, to)) {
