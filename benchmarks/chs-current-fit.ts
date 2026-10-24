@@ -7,14 +7,18 @@
 // them (docs/validation/chs-currents.md).
 //
 // GRID=-13..-1 or GRID=-2,-1 picks grid points, FIT_END=YYYY-MM-DD the one
-// ending that day, and neither the newest on or before today. WINDOWS=60,210,365
-// adds the report-only 365-day window. GATES=path.json scores [{ id, latitude,
-// longitude }] in place of the curated gates in @slackwater/database.
-// NO_FLOORS=1 skips the share and p50 assertions but still checks for reversed
-// axes, requires every group short of the horizon, report-only windows
-// included, to have scored rows, and requires the run to have one. FAST=1 scores
-// three gates at +28 d. OUT=dir writes the outputs somewhere other than
-// benchmarks/.
+// ending that day, and neither the newest on or before today.
+// WINDOWS=60,210,365 adds the report-only 365-day window. GATES=path.json
+// scores [{ id, latitude, longitude }] in place of the curated gates in
+// @slackwater/database. NO_FLOORS=1 skips the share and p50 assertions but
+// still checks for reversed axes, requires every group short of the horizon,
+// report-only windows included, to have scored rows, and requires the run to
+// have one. ROWS_ONLY=1 records rows without judging them, for the results
+// repository: it skips the reversed-axis, per-group and run-level scored
+// checks as well as the floors, and keeps the check that no two gates resolve
+// to the same IWLS station. Any non-empty value turns FAST or NO_FLOORS on, 0
+// included; ROWS_ONLY takes only 1. FAST=1 scores three gates at +28 d.
+// OUT=dir writes the outputs somewhere other than benchmarks/.
 import { expect } from "vitest";
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
@@ -71,7 +75,13 @@ const CONTEXT = CONTEXT_MIN * 60_000;
 const iwls = createClient();
 
 const FAST = !!process.env.FAST;
-const NO_FLOORS = !!process.env.NO_FLOORS;
+// ROWS_ONLY turns off the only check that sees a reversed axis, so 0 or false
+// must not turn it on.
+if (![undefined, "", "1"].includes(process.env.ROWS_ONLY)) {
+  throw new Error(`ROWS_ONLY takes 1 or nothing, not ${JSON.stringify(process.env.ROWS_ONLY)}`);
+}
+const ROWS_ONLY = process.env.ROWS_ONLY === "1";
+const NO_FLOORS = ROWS_ONLY || !!process.env.NO_FLOORS;
 const OUT = process.env.OUT ?? __dirname;
 const OFFSETS: readonly number[] = FAST ? [28] : OFFSET_DAYS;
 const WINDOWS = (process.env.WINDOWS ?? chsCurrentFit.days.join(",")).split(",").map(Number);
@@ -239,11 +249,17 @@ for (const i of grid) {
         passing,
         p50SlackMedianMin: p50,
       });
-      // An empty group is a failure, not a skip, even under NO_FLOORS and for a
-      // report-only window: every gate recording a reason or failure would
-      // otherwise pass vacuously.
+      // Short of ROWS_ONLY, an empty group is a failure, not a skip, even under
+      // NO_FLOORS and for a report-only window: every gate recording a reason
+      // or failure would otherwise pass vacuously.
       const allBeyond = group.length > 0 && group.every((r) => r.status === "beyond_horizon");
       if (allBeyond) continue;
+      // In ROWS_ONLY a shard's groups can be empty when its gates all have a
+      // reason or a failure, as a one-gate backfill can, and a reversed axis is
+      // one gate's disqualifier. The results repository will check across every
+      // shard that each grid point, window and held-out week short of the
+      // horizon scored a gate.
+      if (ROWS_ONLY) continue;
       expect(scored.length, `grid ${i} ${days} d +${offset} d gates scored`).toBeGreaterThan(0);
       if (!recipeDays.includes(days)) continue;
       // A reversed axis keeps its slack times, so its rows score as usual and
@@ -270,12 +286,16 @@ for (const i of grid) {
 }
 // Every group above is skipped when every week lies beyond the horizon, as
 // when every gate's current-year probe came back empty, so the run as a whole
-// must still have scored something.
+// must still have scored something. In ROWS_ONLY the results repository will
+// check that across every shard, since a one-gate shard's gate can have a
+// reason in place of rows.
 const counted = (status: RowStatus) => rows.filter((r) => r.status === status).length;
-expect(
-  counted("scored"),
-  `rows scored (${counted("beyond_horizon")} beyond the horizon, ${counted("no_events")} with no events)`,
-).toBeGreaterThan(0);
+if (!ROWS_ONLY) {
+  expect(
+    counted("scored"),
+    `rows scored (${counted("beyond_horizon")} beyond the horizon, ${counted("no_events")} with no events)`,
+  ).toBeGreaterThan(0);
+}
 
 async function scoreGridPoint(
   gate: Gate,
