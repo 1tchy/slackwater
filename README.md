@@ -279,7 +279,7 @@ Canadian Hydrographic Service ports have no redistributable constants, so client
 
 ### Fitted CHS current gates
 
-CHS current gates are fitted the same way from CHS's speed and direction predictions with `chsCurrentFit`, over 60 or 210 days per gate. `benchmarks/chs-current-fit.ts` scores both windows on a year-round grid of held-out weeks against CHS's published slack and peak times. It runs every month on the newest grid point and keeps its rows as a workflow artifact for 90 days, and openwatersio/chs-current-validation will take that run over and pool a year of rows per gate. On the run with the fit ending October 1, 2026, 10 to 19 gates met the [accuracy bar](docs/validation/chs-currents.md) at 210 days depending on the week, and verdicts for gates near the bar change with the season.
+CHS current gates are fitted the same way from CHS's speed and direction predictions with `chsCurrentFit`, over 60 or 210 days per gate. `benchmarks/chs-current-fit.ts` scores both windows on a year-round grid of held-out weeks against CHS's published slack and peak times. [openwatersio/chs-current-validation](https://github.com/openwatersio/chs-current-validation) runs it every month, pools a year of rows per gate, and publishes each gate's tier and bounds in its [releases](https://github.com/openwatersio/chs-current-validation/releases). On the run with the fit ending October 1, 2026, 10 to 19 gates met the [accuracy bar](docs/validation/chs-currents.md) at 210 days depending on the week, and verdicts for gates near the bar change with the season.
 
 ## License
 
